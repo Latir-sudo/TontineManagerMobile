@@ -1,0 +1,264 @@
+import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+
+class CreerTontineScreen extends StatefulWidget {
+  const CreerTontineScreen({super.key});
+
+  @override
+  State<CreerTontineScreen> createState() => _CreerTontineScreenState();
+}
+
+class _CreerTontineScreenState extends State<CreerTontineScreen> {
+  final _nomController = TextEditingController();
+  final _montantController = TextEditingController(text: '5000');
+  final _maxMembresController = TextEditingController(text: '20');
+  String? _selectedCategorie;
+  String _selectedLocalite = 'Dakar';
+  String? _selectedFrequence;
+
+  final List<String> _categories = [
+    'Epargne',
+    'Solidarité',
+    'Investissement',
+    'Famille',
+  ];
+
+  final List<String> _localites = [
+    'Dakar',
+    'Thiès',
+    'Saint-Louis',
+    'Ziguinchor',
+    'Kaolack',
+  ];
+
+  final List<String> _frequences = [
+    'Hebdomadaire',
+    'Mensuel',
+    'Bimensuel',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.white,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeaderSection(),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLabel('Nom de la tontine'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nomController,
+                      decoration: const InputDecoration(
+                        hintText: 'Ex. Epargne solidaire',
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    _buildLabel('Catégorie'),
+                    const SizedBox(height: 8),
+                    _buildDropdown(
+                      hint: 'Sélectionnez une catégorie',
+                      value: _selectedCategorie,
+                      items: _categories,
+                      onChanged: (val) =>
+                          setState(() => _selectedCategorie = val),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on,
+                            size: 18, color: AppColors.darkText),
+                        const SizedBox(width: 4),
+                        _buildLabel('Localité'),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDropdown(
+                      hint: 'Sélectionnez une localité',
+                      value: _selectedLocalite,
+                      items: _localites,
+                      onChanged: (val) =>
+                          setState(() => _selectedLocalite = val!),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildLabel('Montant'),
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _montantController,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  suffixText: 'FCFA',
+                                  suffixStyle: TextStyle(
+                                    color: AppColors.grey,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildLabel('Frequence'),
+                              const SizedBox(height: 8),
+                              _buildDropdown(
+                                hint: 'Choisir',
+                                value: _selectedFrequence,
+                                items: _frequences,
+                                onChanged: (val) =>
+                                    setState(() => _selectedFrequence = val),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        const Icon(Icons.groups_outlined,
+                            size: 18, color: AppColors.darkText),
+                        const SizedBox(width: 4),
+                        _buildLabel('Max membres'),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: 120,
+                      child: TextField(
+                        controller: _maxMembresController,
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Creer tontine'),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: AppColors.primaryDark,
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: const Icon(Icons.arrow_back_ios,
+                    color: AppColors.white, size: 20),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                '💰',
+                style: TextStyle(fontSize: 24),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Créer une tontine',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.white,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Remplissez les informations pour créer votre tontine',
+            style: TextStyle(
+              fontSize: 16,
+              color: AppColors.white.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLabel(String text) {
+    return Text(
+      '$text *',
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: AppColors.darkText,
+      ),
+    );
+  }
+
+  Widget _buildDropdown({
+    required String hint,
+    required String? value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.lightGrey,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          hint: Text(
+            hint,
+            style: const TextStyle(color: AppColors.grey, fontSize: 16),
+          ),
+          value: value,
+          icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.grey),
+          items: items.map((item) {
+            return DropdownMenuItem(
+              value: item,
+              child: Text(item),
+            );
+          }).toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
