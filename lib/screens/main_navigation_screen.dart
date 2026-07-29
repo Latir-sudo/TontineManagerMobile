@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/session_service.dart';
 import 'accueil_screen.dart';
 import 'mes_tontines_screen.dart';
 import 'tontines_disponibles_screen.dart';
@@ -234,9 +235,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          const Text(
-            'Amadou Diop',
-            style: TextStyle(
+          Text(
+            SessionService.currentAppUser?.nom ?? 'Utilisateur',
+            style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: AppColors.white,
@@ -244,7 +245,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'amadou.diop@email.com',
+            SessionService.currentAppUser?.telephone ?? '',
             style: TextStyle(
               fontSize: 14,
               color: AppColors.white.withValues(alpha: 0.7),
@@ -372,52 +373,97 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void _showLogoutDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Déconnexion',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: AppColors.darkText,
-          ),
-        ),
-        content: const Text(
-          'Êtes-vous sûr de vouloir vous déconnecter ?',
-          style: TextStyle(fontSize: 16, color: AppColors.grey),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Annuler',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.grey,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ConnexionScreen(),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE53935).withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
                 ),
-              );
-            },
-            child: const Text(
-              'Déconnexion',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFFE53935),
+                child: const Icon(Icons.logout_rounded,
+                    color: Color(0xFFE53935), size: 28),
               ),
-            ),
+              const SizedBox(height: 18),
+              const Text(
+                'Déconnexion',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.darkText,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Êtes-vous sûr de vouloir vous déconnecter ?',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15, color: AppColors.grey),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.grey,
+                        side: BorderSide(
+                            color: AppColors.grey.withValues(alpha: 0.3)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text(
+                        'Annuler',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await SessionService().logout();
+                        if (!mounted) return;
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ConnexionScreen(),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE53935),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text(
+                        'Déconnexion',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

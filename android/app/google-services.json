@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "840689900833",
+    "project_id": "tontine-manager-sn-2026",
+    "storage_bucket": "tontine-manager-sn-2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:840689900833:android:5166010a065f7d675e3260",
+        "android_client_info": {
+          "package_name": "com.tontinemanager.tontine_manager"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCnG16dV-lEGs890LPinStORCbvcv40iYA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

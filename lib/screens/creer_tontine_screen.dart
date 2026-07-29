@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/tontine_service.dart';
+import '../services/session_service.dart';
 
 class CreerTontineScreen extends StatefulWidget {
   const CreerTontineScreen({super.key});
@@ -9,12 +11,14 @@ class CreerTontineScreen extends StatefulWidget {
 }
 
 class _CreerTontineScreenState extends State<CreerTontineScreen> {
+  final _tontineService = TontineService();
   final _nomController = TextEditingController();
   final _montantController = TextEditingController(text: '5000');
   final _maxMembresController = TextEditingController(text: '20');
   String? _selectedCategorie;
   String _selectedLocalite = 'Dakar';
   String? _selectedFrequence;
+  bool _isLoading = false;
 
   final List<String> _categories = [
     'Epargne',
@@ -36,6 +40,44 @@ class _CreerTontineScreenState extends State<CreerTontineScreen> {
     'Mensuel',
     'Bimensuel',
   ];
+
+  Future<void> _creerTontine() async {
+    if (_nomController.text.trim().isEmpty || _selectedFrequence == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Veuillez remplir tous les champs obligatoires')),
+      );
+      return;
+    }
+
+    final user = SessionService.currentAppUser;
+    if (user == null) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _tontineService.creerTontine(
+        nom: _nomController.text.trim(),
+        description: _selectedCategorie ?? '',
+        montantCotisation: int.tryParse(_montantController.text) ?? 5000,
+        frequence: _selectedFrequence!,
+        localite: _selectedLocalite,
+        adminUid: user.uid,
+        adminNom: user.nom,
+        maxMembres: int.tryParse(_maxMembresController.text) ?? 20,
+        dateDebut: DateTime.now(),
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -151,10 +193,17 @@ class _CreerTontineScreenState extends State<CreerTontineScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                        child: const Text('Creer tontine'),
+                        onPressed: _isLoading ? null : _creerTontine,
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: AppColors.white,
+                                ),
+                              )
+                            : const Text('Creer tontine'),
                       ),
                     ),
                     const SizedBox(height: 24),

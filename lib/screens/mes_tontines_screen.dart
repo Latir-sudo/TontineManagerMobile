@@ -1,57 +1,56 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/tontine_service.dart';
+import '../services/session_service.dart';
+import '../models/tontine.dart';
 import 'detail_tontine_screen.dart';
 
-class MesTontinesScreen extends StatelessWidget {
+class MesTontinesScreen extends StatefulWidget {
   const MesTontinesScreen({super.key});
 
-  final List<Map<String, dynamic>> _tontines = const [
-    {
-      'name': 'Tontine Famille',
-      'categorie': 'Epargne',
-      'montant': '5 000 FCFA',
-      'membres': 15,
-      'maxMembres': 20,
-      'frequence': 'Mensuelle',
-      'prochainPaiement': '3 jours',
-      'isActive': true,
-    },
-    {
-      'name': 'Epargne Quartier',
-      'categorie': 'Solidarité',
-      'montant': '10 000 FCFA',
-      'membres': 20,
-      'maxMembres': 20,
-      'frequence': 'Mensuelle',
-      'prochainPaiement': '1 jour',
-      'isActive': true,
-    },
-    {
-      'name': 'Tontine Collègues',
-      'categorie': 'Investissement',
-      'montant': '25 000 FCFA',
-      'membres': 8,
-      'maxMembres': 10,
-      'frequence': 'Bimensuelle',
-      'prochainPaiement': '12 jours',
-      'isActive': true,
-    },
-    {
-      'name': 'Epargne Femmes',
-      'categorie': 'Famille',
-      'montant': '3 000 FCFA',
-      'membres': 12,
-      'maxMembres': 15,
-      'frequence': 'Hebdomadaire',
-      'prochainPaiement': 'Terminée',
-      'isActive': false,
-    },
-  ];
+  @override
+  State<MesTontinesScreen> createState() => _MesTontinesScreenState();
+}
+
+class _MesTontinesScreenState extends State<MesTontinesScreen> {
+  final _tontineService = TontineService();
+  List<Tontine> _tontines = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTontines();
+  }
+
+  Future<void> _loadTontines() async {
+    final user = SessionService.currentAppUser;
+    if (user == null) return;
+
+    final tontines = await _tontineService.getMesTontines(user.uid);
+    if (mounted) {
+      setState(() {
+        _tontines = tontines;
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _formatMontant(int montant) {
+    if (montant == 0) return '0';
+    final str = montant.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < str.length; i++) {
+      if (i > 0 && (str.length - i) % 3 == 0) buffer.write(' ');
+      buffer.write(str[i]);
+    }
+    return buffer.toString();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final activeTontines = _tontines.where((t) => t['isActive'] == true).toList();
-    final inactiveTontines = _tontines.where((t) => t['isActive'] == false).toList();
+    final activeTontines = _tontines.where((t) => t.isActive).toList();
+    final inactiveTontines = _tontines.where((t) => !t.isActive).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
@@ -60,84 +59,118 @@ class MesTontinesScreen extends StatelessWidget {
           children: [
             _buildHeader(activeTontines.length, _tontines.length),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'Actives',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.darkText,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _tontines.isEmpty
+                      ? _buildEmpty()
+                      : SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (activeTontines.isNotEmpty) ...[
+                                Row(
+                                  children: [
+                                    const Text(
+                                      'Actives',
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.darkText,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF4CAF50)
+                                            .withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Text(
+                                        '${activeTontines.length}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF4CAF50),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                                ...activeTontines
+                                    .map((t) => _buildTontineCard(context, t)),
+                              ],
+                              if (inactiveTontines.isNotEmpty) ...[
+                                const SizedBox(height: 24),
+                                Row(
+                                  children: [
+                                    const Text(
+                                      'Terminées',
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.grey,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            AppColors.grey.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Text(
+                                        '${inactiveTontines.length}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                                ...inactiveTontines
+                                    .map((t) => _buildTontineCard(context, t)),
+                              ],
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${activeTontines.length}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF4CAF50),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    ...activeTontines.map(
-                        (t) => _buildTontineCard(context, t)),
-                    if (inactiveTontines.isNotEmpty) ...[
-                      const SizedBox(height: 24),
-                      Row(
-                        children: [
-                          const Text(
-                            'Terminées',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.grey,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: AppColors.grey.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${inactiveTontines.length}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.grey,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      ...inactiveTontines.map(
-                          (t) => _buildTontineCard(context, t)),
-                    ],
-                  ],
-                ),
-              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildEmpty() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.account_balance_wallet_outlined,
+              size: 48, color: AppColors.grey),
+          const SizedBox(height: 16),
+          const Text(
+            'Aucune tontine',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.darkText,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Créez ou rejoignez une tontine pour commencer',
+            style: TextStyle(fontSize: 14, color: AppColors.grey),
+          ),
+        ],
       ),
     );
   }
@@ -289,16 +322,14 @@ class MesTontinesScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTontineCard(BuildContext context, Map<String, dynamic> tontine) {
-    final bool isActive = tontine['isActive'];
-    final int membres = tontine['membres'];
-    final int maxMembres = tontine['maxMembres'];
-
+  Widget _buildTontineCard(BuildContext context, Tontine tontine) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const DetailTontineScreen()),
+          MaterialPageRoute(
+              builder: (context) =>
+                  DetailTontineScreen(tontineId: tontine.id)),
         );
       },
       child: Container(
@@ -325,14 +356,15 @@ class MesTontinesScreen extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: isActive
+                    color: tontine.isActive
                         ? AppColors.primaryDark.withValues(alpha: 0.1)
                         : AppColors.grey.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
                     Icons.account_balance_wallet,
-                    color: isActive ? AppColors.primaryDark : AppColors.grey,
+                    color:
+                        tontine.isActive ? AppColors.primaryDark : AppColors.grey,
                     size: 22,
                   ),
                 ),
@@ -342,7 +374,7 @@ class MesTontinesScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        tontine['name'],
+                        tontine.nom,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -351,7 +383,7 @@ class MesTontinesScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        tontine['categorie'],
+                        tontine.description,
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.grey,
@@ -364,7 +396,7 @@ class MesTontinesScreen extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: isActive
+                    color: tontine.isActive
                         ? Colors.green.withValues(alpha: 0.1)
                         : AppColors.grey.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
@@ -375,15 +407,16 @@ class MesTontinesScreen extends StatelessWidget {
                       Icon(
                         Icons.circle,
                         size: 7,
-                        color: isActive ? Colors.green : AppColors.grey,
+                        color: tontine.isActive ? Colors.green : AppColors.grey,
                       ),
                       const SizedBox(width: 5),
                       Text(
-                        isActive ? 'Active' : 'Terminée',
+                        tontine.isActive ? 'Active' : 'Terminée',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: isActive ? Colors.green : AppColors.grey,
+                          color:
+                              tontine.isActive ? Colors.green : AppColors.grey,
                         ),
                       ),
                     ],
@@ -394,9 +427,10 @@ class MesTontinesScreen extends StatelessWidget {
             const SizedBox(height: 14),
             Row(
               children: [
-                _buildCardInfo(Icons.people_outline, '$membres/$maxMembres membres'),
+                _buildCardInfo(Icons.people_outline,
+                    '${tontine.membresUids.length}/${tontine.maxMembres} membres'),
                 const SizedBox(width: 16),
-                _buildCardInfo(Icons.loop, tontine['frequence']),
+                _buildCardInfo(Icons.loop, tontine.frequence),
               ],
             ),
             const SizedBox(height: 12),
@@ -404,7 +438,7 @@ class MesTontinesScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  tontine['montant'],
+                  '${_formatMontant(tontine.montantCotisation)} FCFA',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -414,17 +448,17 @@ class MesTontinesScreen extends StatelessWidget {
                 Row(
                   children: [
                     Icon(
-                      Icons.access_time,
+                      Icons.location_on_outlined,
                       size: 14,
-                      color: isActive ? AppColors.accent : AppColors.grey,
+                      color: AppColors.grey,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      isActive ? 'Dans ${tontine['prochainPaiement']}' : tontine['prochainPaiement'],
-                      style: TextStyle(
+                      tontine.localite,
+                      style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: isActive ? AppColors.accent : AppColors.grey,
+                        color: AppColors.grey,
                       ),
                     ),
                   ],

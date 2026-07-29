@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../services/tontine_service.dart';
+import '../services/session_service.dart';
+import '../models/cotisation.dart';
 
 class HistoriqueCotisationScreen extends StatefulWidget {
   const HistoriqueCotisationScreen({super.key});
@@ -11,64 +15,80 @@ class HistoriqueCotisationScreen extends StatefulWidget {
 
 class _HistoriqueCotisationScreenState
     extends State<HistoriqueCotisationScreen> {
+  final _tontineService = TontineService();
   String _selectedFilter = 'tous';
+  List<Cotisation> _cotisations = [];
+  int _totalCotise = 0;
+  bool _isLoading = true;
 
-  final List<Map<String, dynamic>> _cotisations = [
-    {
-      'tontine': 'Tontine Famille',
-      'method': 'Wave',
-      'amount': '-5000 FCFA',
-      'date': '1 er Mai 2026',
-      'time': '18:00',
-      'reference': '#TX004F3T3',
-      'status': 'reussi',
-    },
-    {
-      'tontine': 'Tontine Famille',
-      'method': 'Wave',
-      'amount': '-10 000 FCFA',
-      'date': '20 janvier 2026',
-      'time': '20:00',
-      'reference': '#AZX004F3T3',
-      'status': 'reussi',
-    },
-    {
-      'tontine': 'Tontine Famille',
-      'method': 'Wave',
-      'amount': '-5000 FCFA',
-      'date': '1 er Mai 2026',
-      'time': '18:00',
-      'reference': '#TX004F3T3',
-      'status': 'echoue',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadCotisations();
+  }
 
-  List<Map<String, dynamic>> get _filteredCotisations {
+  Future<void> _loadCotisations() async {
+    final user = SessionService.currentAppUser;
+    if (user == null) return;
+
+    final cotisations = await _tontineService.getHistoriqueCotisations(user.uid);
+    final total = await _tontineService.getTotalCotise(user.uid);
+
+    if (mounted) {
+      setState(() {
+        _cotisations = cotisations;
+        _totalCotise = total;
+        _isLoading = false;
+      });
+    }
+  }
+
+  List<Cotisation> get _filteredCotisations {
     if (_selectedFilter == 'tous') return _cotisations;
-    return _cotisations
-        .where((c) => c['status'] == _selectedFilter)
-        .toList();
+    return _cotisations.where((c) => c.statut == _selectedFilter).toList();
+  }
+
+  String _formatMontant(int montant) {
+    if (montant == 0) return '0';
+    final str = montant.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < str.length; i++) {
+      if (i > 0 && (str.length - i) % 3 == 0) buffer.write(' ');
+      buffer.write(str[i]);
+    }
+    return buffer.toString();
   }
 
   @override
   Widget build(BuildContext context) {
+    final paiementsReussis = _cotisations.where((c) => c.statut == 'payee').length;
+
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(context),
+            _buildHeader(context, paiementsReussis),
             const SizedBox(height: 20),
             _buildFilterTabs(),
             const SizedBox(height: 20),
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                itemCount: _filteredCotisations.length,
-                itemBuilder: (context, index) {
-                  return _buildCotisationCard(_filteredCotisations[index]);
-                },
-              ),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredCotisations.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'Aucune cotisation',
+                            style: TextStyle(color: AppColors.grey, fontSize: 16),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          itemCount: _filteredCotisations.length,
+                          itemBuilder: (context, index) {
+                            return _buildCotisationCard(_filteredCotisations[index]);
+                          },
+                        ),
             ),
           ],
         ),
@@ -76,7 +96,7 @@ class _HistoriqueCotisationScreenState
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, int paiementsReussis) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -98,8 +118,6 @@ class _HistoriqueCotisationScreenState
                     color: AppColors.white, size: 20),
               ),
               const SizedBox(width: 12),
-              const Text('💰', style: TextStyle(fontSize: 18)),
-              const SizedBox(width: 8),
               const Text(
                 'Historique des cotisations',
                 style: TextStyle(
@@ -119,9 +137,9 @@ class _HistoriqueCotisationScreenState
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            '20 000 FCFA',
-            style: TextStyle(
+          Text(
+            '${_formatMontant(_totalCotise)} FCFA',
+            style: const TextStyle(
               fontSize: 30,
               fontWeight: FontWeight.bold,
               color: AppColors.white,
@@ -129,7 +147,7 @@ class _HistoriqueCotisationScreenState
           ),
           const SizedBox(height: 4),
           Text(
-            '3 paiements réussis',
+            '$paiementsReussis paiements réussis',
             style: TextStyle(
               fontSize: 15,
               color: AppColors.white.withValues(alpha: 0.8),
@@ -147,9 +165,9 @@ class _HistoriqueCotisationScreenState
         children: [
           _buildFilterChip('Tous', 'tous'),
           const SizedBox(width: 8),
-          _buildFilterChip('Réussis', 'reussi'),
+          _buildFilterChip('Réussis', 'payee'),
           const SizedBox(width: 8),
-          _buildFilterChip('Echoué', 'echoue'),
+          _buildFilterChip('Echoué', 'echouee'),
         ],
       ),
     );
@@ -180,8 +198,11 @@ class _HistoriqueCotisationScreenState
     );
   }
 
-  Widget _buildCotisationCard(Map<String, dynamic> cotisation) {
-    final isSuccess = cotisation['status'] == 'reussi';
+  Widget _buildCotisationCard(Cotisation cotisation) {
+    final isSuccess = cotisation.statut == 'payee';
+    final dateFormat = DateFormat('dd MMM yyyy', 'fr_FR');
+    final timeFormat = DateFormat('HH:mm');
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -221,7 +242,7 @@ class _HistoriqueCotisationScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      cotisation['tontine'],
+                      cotisation.tontineNom,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -230,7 +251,7 @@ class _HistoriqueCotisationScreenState
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      cotisation['method'],
+                      cotisation.userNom,
                       style: const TextStyle(
                         fontSize: 15,
                         color: AppColors.grey,
@@ -243,7 +264,7 @@ class _HistoriqueCotisationScreenState
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    cotisation['amount'],
+                    '-${_formatMontant(cotisation.montant)} FCFA',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -281,20 +302,20 @@ class _HistoriqueCotisationScreenState
               Expanded(
                 child: Row(
                   children: [
-                    Icon(Icons.calendar_today, size: 12, color: AppColors.grey),
+                    const Icon(Icons.calendar_today, size: 12, color: AppColors.grey),
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        cotisation['date'],
+                        dateFormat.format(cotisation.date),
                         style: const TextStyle(fontSize: 11, color: AppColors.grey),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Icon(Icons.access_time, size: 12, color: AppColors.grey),
+                    const Icon(Icons.access_time, size: 12, color: AppColors.grey),
                     const SizedBox(width: 4),
                     Text(
-                      cotisation['time'],
+                      timeFormat.format(cotisation.date),
                       style: const TextStyle(fontSize: 11, color: AppColors.grey),
                     ),
                   ],
@@ -302,7 +323,7 @@ class _HistoriqueCotisationScreenState
               ),
               const SizedBox(width: 8),
               Text(
-                cotisation['reference'],
+                '#${cotisation.id.substring(0, 8).toUpperCase()}',
                 style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,

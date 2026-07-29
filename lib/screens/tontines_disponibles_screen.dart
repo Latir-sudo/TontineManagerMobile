@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../services/tontine_service.dart';
+import '../services/session_service.dart';
+import '../models/tontine.dart';
 import 'detail_tontine_screen.dart';
 
 class TontinesDisponiblesScreen extends StatefulWidget {
@@ -11,83 +15,67 @@ class TontinesDisponiblesScreen extends StatefulWidget {
 }
 
 class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
+  final _tontineService = TontineService();
   final _searchController = TextEditingController();
   String _selectedFilter = 'Toutes';
-  String _selectedView = 'Liste des tontines';
+  List<Tontine> _tontines = [];
+  bool _isLoading = true;
 
   final List<String> _filters = [
     'Toutes',
-    'Familiale',
-    'Professionnelle',
-    'Projet',
+    'Dakar',
+    'Thiès',
+    'Saint-Louis',
   ];
 
-  final List<Map<String, dynamic>> _tontines = const [
-    {
-      'name': 'Épargne Solidaire',
-      'categorie': 'Familiale',
-      'montant': '5 000 FCFA',
-      'frequence': 'Mensuel',
-      'localite': 'Dakar',
-      'membres': 15,
-      'maxMembres': 20,
-      'dateDebut': '15 Mai 2026',
-      'isFull': false,
-    },
-    {
-      'name': 'Tontine des Commerçants',
-      'categorie': 'Professionnelle',
-      'montant': '15 000 FCFA',
-      'frequence': 'Bi-mensuel',
-      'localite': 'Thiès',
-      'membres': 25,
-      'maxMembres': 30,
-      'dateDebut': '1 Juin 2026',
-      'isFull': false,
-    },
-    {
-      'name': 'Projet immobilier',
-      'categorie': 'Projet',
-      'montant': '50 000 FCFA',
-      'frequence': 'Mensuel',
-      'localite': 'Dakar',
-      'membres': 30,
-      'maxMembres': 30,
-      'dateDebut': '17 Mai 2026',
-      'isFull': true,
-    },
-    {
-      'name': 'Solidarité Femmes',
-      'categorie': 'Familiale',
-      'montant': '3 000 FCFA',
-      'frequence': 'Hebdomadaire',
-      'localite': 'Saint-Louis',
-      'membres': 10,
-      'maxMembres': 20,
-      'dateDebut': '20 Juin 2026',
-      'isFull': false,
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadTontines();
+  }
 
-  List<Map<String, dynamic>> get _filteredTontines {
+  Future<void> _loadTontines() async {
+    final user = SessionService.currentAppUser;
+    if (user == null) return;
+
+    final tontines = await _tontineService.getTontinesDisponibles(user.uid);
+    if (mounted) {
+      setState(() {
+        _tontines = tontines;
+        _isLoading = false;
+      });
+    }
+  }
+
+  List<Tontine> get _filteredTontines {
     var filtered = _tontines.toList();
 
     if (_selectedFilter != 'Toutes') {
-      filtered =
-          filtered.where((t) => t['categorie'] == _selectedFilter).toList();
+      filtered = filtered.where((t) => t.localite == _selectedFilter).toList();
     }
 
     final query = _searchController.text.toLowerCase();
     if (query.isNotEmpty) {
       filtered = filtered
           .where((t) =>
-              (t['name'] as String).toLowerCase().contains(query) ||
-              (t['categorie'] as String).toLowerCase().contains(query) ||
-              (t['localite'] as String).toLowerCase().contains(query))
+              t.nom.toLowerCase().contains(query) ||
+              t.description.toLowerCase().contains(query) ||
+              t.localite.toLowerCase().contains(query))
           .toList();
     }
 
     return filtered;
+  }
+
+  String _formatMontant(int montant) {
+    if (montant == 0) return '0';
+    final str = montant.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < str.length; i++) {
+      if (i > 0 && (str.length - i) % 3 == 0) buffer.write(' ');
+      buffer.write(str[i]);
+    }
+    return buffer.toString();
   }
 
   @override
@@ -105,14 +93,16 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
           children: [
             _buildHeader(),
             Expanded(
-              child: _filteredTontines.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                      itemCount: _filteredTontines.length,
-                      itemBuilder: (context, index) =>
-                          _buildTontineCard(_filteredTontines[index]),
-                    ),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredTontines.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                          itemCount: _filteredTontines.length,
+                          itemBuilder: (context, index) =>
+                              _buildTontineCard(_filteredTontines[index]),
+                        ),
             ),
           ],
         ),
@@ -161,8 +151,6 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 8),
-              _buildViewSelector(),
             ],
           ),
           const SizedBox(height: 16),
@@ -202,35 +190,6 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
           const SizedBox(height: 14),
           _buildFilterChips(),
         ],
-      ),
-    );
-  }
-
-  Widget _buildViewSelector() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.lightGrey,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: AppColors.grey.withValues(alpha: 0.2)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedView,
-          isDense: true,
-          icon: const Icon(Icons.keyboard_arrow_down,
-              color: AppColors.darkText, size: 18),
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: AppColors.darkText,
-          ),
-          items: ['Liste des tontines', 'Carte'].map((item) {
-            return DropdownMenuItem(value: item, child: Text(item));
-          }).toList(),
-          onChanged: (val) => setState(() => _selectedView = val!),
-        ),
       ),
     );
   }
@@ -317,11 +276,12 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
     );
   }
 
-  Widget _buildTontineCard(Map<String, dynamic> tontine) {
-    final int membres = tontine['membres'];
-    final int maxMembres = tontine['maxMembres'];
-    final bool isFull = tontine['isFull'];
+  Widget _buildTontineCard(Tontine tontine) {
+    final int membres = tontine.membresUids.length;
+    final int maxMembres = tontine.maxMembres;
+    final bool isFull = membres >= maxMembres;
     final double progress = membres / maxMembres;
+    final dateFormat = DateFormat('dd MMM yyyy');
 
     Color progressColor;
     if (progress >= 1.0) {
@@ -337,7 +297,8 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-              builder: (context) => const DetailTontineScreen()),
+              builder: (context) =>
+                  DetailTontineScreen(tontineId: tontine.id)),
         );
       },
       child: Container(
@@ -367,7 +328,7 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        tontine['name'],
+                        tontine.nom,
                         style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -376,7 +337,7 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        tontine['categorie'],
+                        tontine.description,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
@@ -390,7 +351,7 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      tontine['montant'],
+                      '${_formatMontant(tontine.montantCotisation)} FCFA',
                       style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.bold,
@@ -399,7 +360,7 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      tontine['frequence'],
+                      tontine.frequence,
                       style: const TextStyle(
                         fontSize: 13,
                         color: AppColors.grey,
@@ -417,7 +378,7 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
                     color: AppColors.grey.withValues(alpha: 0.8)),
                 const SizedBox(width: 4),
                 Text(
-                  tontine['localite'],
+                  tontine.localite,
                   style: TextStyle(
                     fontSize: 14,
                     color: AppColors.grey.withValues(alpha: 0.9),
@@ -463,7 +424,7 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
                     color: AppColors.grey.withValues(alpha: 0.8)),
                 const SizedBox(width: 6),
                 Text(
-                  'Début ${tontine['dateDebut']}',
+                  'Début ${dateFormat.format(tontine.dateDebut)}',
                   style: TextStyle(
                     fontSize: 13,
                     color: AppColors.grey.withValues(alpha: 0.9),
@@ -501,7 +462,7 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
                           context,
                           MaterialPageRoute(
                               builder: (context) =>
-                                  const DetailTontineScreen()),
+                                  DetailTontineScreen(tontineId: tontine.id)),
                         );
                       },
                 style: ElevatedButton.styleFrom(
