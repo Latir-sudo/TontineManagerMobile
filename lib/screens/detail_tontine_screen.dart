@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../models/tontine.dart';
+import '../services/tontine_service.dart';
+import '../services/session_service.dart';
 import 'paiement_screen.dart';
 import 'historique_cotisation_screen.dart';
 import 'membres_tontine_screen.dart';
@@ -15,10 +18,102 @@ class DetailTontineScreen extends StatefulWidget {
 }
 
 class _DetailTontineScreenState extends State<DetailTontineScreen> {
-  bool _showAllTours = false;
+  final TontineService _tontineService = TontineService();
+  Tontine? _tontine;
+  bool _isLoading = true;
+  int _mesCotisations = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTontine();
+  }
+
+  Future<void> _loadTontine() async {
+    if (widget.tontineId == null || widget.tontineId!.isEmpty) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final tontine = await _tontineService.getTontine(widget.tontineId!);
+      int mesCotisations = 0;
+      final user = SessionService.currentAppUser;
+      if (user != null && tontine != null) {
+        final cotisations = await _tontineService.getHistoriqueCotisations(user.uid);
+        mesCotisations = cotisations
+            .where((c) => c.tontineId == tontine.id && c.statut == 'payee')
+            .length;
+      }
+      if (mounted) {
+        setState(() {
+          _tontine = tontine;
+          _mesCotisations = mesCotisations;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _formatMontant(int montant) {
+    if (montant == 0) return '0';
+    final str = montant.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < str.length; i++) {
+      if (i > 0 && (str.length - i) % 3 == 0) buffer.write(' ');
+      buffer.write(str[i]);
+    }
+    return buffer.toString();
+  }
+
+  String _formatDate(DateTime date) {
+    final mois = [
+      '', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin',
+      'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'
+    ];
+    return '${date.day} ${mois[date.month]} ${date.year}';
+  }
+
+  bool get _isAdmin {
+    final user = SessionService.currentAppUser;
+    return user != null && _tontine != null && _tontine!.adminUid == user.uid;
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_tontine == null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: AppColors.grey),
+                const SizedBox(height: 16),
+                const Text('Tontine introuvable',
+                    style: TextStyle(fontSize: 16, color: AppColors.grey)),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Retour'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final tontine = _tontine!;
+
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
@@ -29,24 +124,26 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildHeader(context),
+                    _buildHeader(context, tontine),
                     const SizedBox(height: 24),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildAdminSection(context),
+                          if (_isAdmin) ...[
+                            _buildAdminSection(context, tontine),
+                            const SizedBox(height: 20),
+                          ],
+                          _buildInfoGrid(tontine),
                           const SizedBox(height: 20),
-                          _buildInfoGrid(),
-                          const SizedBox(height: 20),
-                          _buildTourTontine(),
-                          const SizedBox(height: 20),
-                          _buildMembresProgress(context),
+                          _buildMembresProgress(context, tontine),
                           const SizedBox(height: 24),
-                          _buildDescriptionCard(),
-                          const SizedBox(height: 24),
-                          _buildInformationsCard(),
+                          if (tontine.description.isNotEmpty) ...[
+                            _buildDescriptionCard(tontine),
+                            const SizedBox(height: 24),
+                          ],
+                          _buildInformationsCard(tontine),
                           const SizedBox(height: 24),
                           _buildHistoriqueLink(context),
                           const SizedBox(height: 24),
@@ -57,14 +154,18 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                 ),
               ),
             ),
-            _buildBottomActions(context),
+            _buildBottomActions(context, tontine),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, Tontine tontine) {
+    final montantCotise = _mesCotisations * tontine.montantCotisation;
+    final totalAttendu = tontine.membresUids.length * tontine.montantCotisation;
+    final progression = totalAttendu > 0 ? montantCotise / totalAttendu : 0.0;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
@@ -97,18 +198,22 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.2),
+                  color: tontine.isActive
+                      ? Colors.green.withValues(alpha: 0.2)
+                      : Colors.red.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.circle, color: Colors.green, size: 8),
-                    SizedBox(width: 6),
+                    Icon(Icons.circle,
+                        color: tontine.isActive ? Colors.green : Colors.red,
+                        size: 8),
+                    const SizedBox(width: 6),
                     Text(
-                      'Active',
+                      tontine.isActive ? 'Active' : 'Inactive',
                       style: TextStyle(
-                        color: Colors.green,
+                        color: tontine.isActive ? Colors.green : Colors.red,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -119,9 +224,9 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          const Text(
-            'Epargne solidaire',
-            style: TextStyle(
+          Text(
+            tontine.nom,
+            style: const TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
               color: AppColors.white,
@@ -129,7 +234,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Tontine familiale',
+            tontine.description.isNotEmpty ? tontine.description : tontine.frequence,
             style: TextStyle(
               fontSize: 15,
               color: AppColors.white.withValues(alpha: 0.7),
@@ -158,7 +263,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                         width: 64,
                         height: 64,
                         child: CircularProgressIndicator(
-                          value: 7 / 12,
+                          value: progression.clamp(0.0, 1.0),
                           strokeWidth: 5,
                           strokeCap: StrokeCap.round,
                           backgroundColor: AppColors.white.withValues(alpha: 0.15),
@@ -170,9 +275,9 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                       Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(
-                            '7',
-                            style: TextStyle(
+                          Text(
+                            '$_mesCotisations',
+                            style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
                               color: AppColors.white,
@@ -180,7 +285,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                             ),
                           ),
                           Text(
-                            '/12',
+                            '/${tontine.membresUids.length}',
                             style: TextStyle(
                               fontSize: 11,
                               color: AppColors.white.withValues(alpha: 0.7),
@@ -206,9 +311,9 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        '35 000 FCFA',
-                        style: TextStyle(
+                      Text(
+                        '${_formatMontant(montantCotise)} FCFA',
+                        style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
                           color: AppColors.white,
@@ -216,7 +321,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'sur 60 000 FCFA',
+                        'sur ${_formatMontant(totalAttendu)} FCFA',
                         style: TextStyle(
                           fontSize: 12,
                           color: AppColors.white.withValues(alpha: 0.6),
@@ -226,36 +331,12 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
-                          value: 35000 / 60000,
+                          value: progression.clamp(0.0, 1.0),
                           minHeight: 5,
                           backgroundColor: AppColors.white.withValues(alpha: 0.15),
                           valueColor: const AlwaysStoppedAnimation<Color>(
                             Color(0xFF4CAF50),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Column(
-                    children: [
-                      Icon(Icons.check_circle_rounded,
-                          color: Color(0xFF4CAF50), size: 18),
-                      SizedBox(height: 2),
-                      Text(
-                        'À jour',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF4CAF50),
                         ),
                       ),
                     ],
@@ -269,14 +350,14 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
     );
   }
 
-  Widget _buildInfoGrid() {
+  Widget _buildInfoGrid(Tontine tontine) {
     return Row(
       children: [
         Expanded(
           child: _buildInfoItem(
             icon: Icons.calendar_month_outlined,
             label: 'Début',
-            value: '15 Mai',
+            value: _formatDate(tontine.dateDebut),
             color: const Color(0xFF5B9BD5),
           ),
         ),
@@ -285,7 +366,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
           child: _buildInfoItem(
             icon: Icons.repeat,
             label: 'Fréquence',
-            value: 'Mensuelle',
+            value: tontine.frequence,
             color: const Color(0xFFE67E22),
           ),
         ),
@@ -294,7 +375,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
           child: _buildInfoItem(
             icon: Icons.groups_outlined,
             label: 'Places',
-            value: '15/20',
+            value: '${tontine.membresUids.length}/${tontine.maxMembres}',
             color: const Color(0xFF27AE60),
           ),
         ),
@@ -344,542 +425,32 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
           Text(
             value,
             style: const TextStyle(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.bold,
               color: AppColors.darkText,
             ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTourTontine() {
-    const int monTour = 9;
-    const int tourActuel = 4;
-    const int totalTours = 15;
-    const String datePrevue = '15 Sept. 2026';
-    const String montantTour = '75 000 FCFA';
+  Widget _buildMembresProgress(BuildContext context, Tontine tontine) {
+    final placesRestantes = tontine.maxMembres - tontine.membresUids.length;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                      ),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.sync_alt_rounded,
-                        color: AppColors.white, size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'Tour de tontine',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.darkText,
-                    ),
-                  ),
-                ],
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF667EEA).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Tour $tourActuel/$totalTours',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF667EEA),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          // Mon tour highlight card
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  const Color(0xFF667EEA).withValues(alpha: 0.08),
-                  const Color(0xFF764BA2).withValues(alpha: 0.05),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: const Color(0xFF667EEA).withValues(alpha: 0.2),
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF667EEA).withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Text(
-                      '9',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Mon tour',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF667EEA),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        datePrevue,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.darkText,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text(
-                      montantTour,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.darkText,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'à recevoir',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          // Ordre de passage
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: AppColors.grey.withValues(alpha: 0.12),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.format_list_numbered_rounded,
-                        size: 16, color: AppColors.darkText),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Ordre de passage',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.darkText,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildTourStep(
-                  numero: 1,
-                  nom: 'Fatou Badji',
-                  statut: _TourStatut.passe,
-                ),
-                _buildTourStep(
-                  numero: 2,
-                  nom: 'Ibrahima Ndiaye',
-                  statut: _TourStatut.passe,
-                ),
-                _buildTourStep(
-                  numero: 3,
-                  nom: 'Aminata Fall',
-                  statut: _TourStatut.passe,
-                ),
-                _buildTourStep(
-                  numero: 4,
-                  nom: 'Moussa Diallo',
-                  statut: _TourStatut.encours,
-                  isLast: !_showAllTours,
-                ),
-                if (_showAllTours) ...[
-                  _buildTourStep(
-                    numero: 5,
-                    nom: 'Khadija Sow',
-                    statut: _TourStatut.avenir,
-                  ),
-                  _buildTourStep(
-                    numero: 6,
-                    nom: 'Ousmane Ba',
-                    statut: _TourStatut.avenir,
-                  ),
-                  _buildTourStep(
-                    numero: 7,
-                    nom: 'Mariama Diop',
-                    statut: _TourStatut.avenir,
-                  ),
-                  _buildTourStep(
-                    numero: 8,
-                    nom: 'Abdoulaye Sarr',
-                    statut: _TourStatut.avenir,
-                  ),
-                ],
-                if (!_showAllTours) ...[
-                  const SizedBox(height: 4),
-                  GestureDetector(
-                    onTap: () => setState(() => _showAllTours = true),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Voir 4 tours de plus',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF667EEA),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.keyboard_arrow_down_rounded,
-                              size: 18, color: Color(0xFF667EEA)),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                if (_showAllTours)
-                  GestureDetector(
-                    onTap: () => setState(() => _showAllTours = false),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Voir moins',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.grey,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(Icons.keyboard_arrow_up_rounded,
-                              size: 18, color: AppColors.grey),
-                        ],
-                      ),
-                    ),
-                  ),
-                const Divider(height: 20, thickness: 1),
-                _buildTourStep(
-                  numero: monTour,
-                  nom: 'Vous',
-                  statut: _TourStatut.moi,
-                  isLast: true,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          // Résumé clair en bas
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF667EEA).withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFF667EEA).withValues(alpha: 0.15),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline_rounded,
-                    size: 16, color: Color(0xFF667EEA)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: RichText(
-                    text: TextSpan(
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.darkText,
-                        height: 1.4,
-                      ),
-                      children: [
-                        const TextSpan(text: 'Vous recevrez '),
-                        const TextSpan(
-                          text: montantTour,
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const TextSpan(text: ' au '),
-                        TextSpan(
-                          text: 'tour $monTour',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF667EEA),
-                          ),
-                        ),
-                        const TextSpan(text: '\nprévu le '),
-                        const TextSpan(
-                          text: datePrevue,
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTourStep({
-    required int numero,
-    required String nom,
-    required _TourStatut statut,
-    bool isLast = false,
-  }) {
-    Color circleColor;
-    Color textColor;
-    Widget circleChild;
-    Color lineColor;
-
-    switch (statut) {
-      case _TourStatut.passe:
-        circleColor = const Color(0xFF27AE60);
-        textColor = AppColors.grey;
-        lineColor = const Color(0xFF27AE60).withValues(alpha: 0.4);
-        circleChild = const Icon(Icons.check_rounded,
-            color: AppColors.white, size: 12);
-        break;
-      case _TourStatut.encours:
-        circleColor = const Color(0xFF667EEA);
-        textColor = const Color(0xFF667EEA);
-        lineColor = AppColors.grey.withValues(alpha: 0.25);
-        circleChild = Text(
-          '$numero',
-          style: const TextStyle(
-            color: AppColors.white,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-          ),
-        );
-        break;
-      case _TourStatut.avenir:
-        circleColor = AppColors.grey.withValues(alpha: 0.25);
-        textColor = AppColors.grey;
-        lineColor = AppColors.grey.withValues(alpha: 0.25);
-        circleChild = Text(
-          '$numero',
-          style: TextStyle(
-            color: AppColors.grey,
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-          ),
-        );
-        break;
-      case _TourStatut.moi:
-        circleColor = const Color(0xFF764BA2);
-        textColor = const Color(0xFF764BA2);
-        lineColor = Colors.transparent;
-        circleChild = const Icon(Icons.star_rounded,
-            color: AppColors.white, size: 12);
-        break;
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Column(
-          children: [
-            Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: circleColor,
-                shape: BoxShape.circle,
-                boxShadow: (statut == _TourStatut.encours ||
-                        statut == _TourStatut.moi)
-                    ? [
-                        BoxShadow(
-                          color: circleColor.withValues(alpha: 0.4),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Center(child: circleChild),
-            ),
-            if (!isLast)
-              Container(
-                width: 2,
-                height: 24,
-                margin: const EdgeInsets.symmetric(vertical: 2),
-                color: lineColor,
-              ),
-          ],
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 3),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Flexible(
-                  child: Text(
-                    nom,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: (statut == _TourStatut.encours ||
-                              statut == _TourStatut.moi)
-                          ? FontWeight.w700
-                          : FontWeight.w500,
-                      color: textColor,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (statut == _TourStatut.encours)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF667EEA).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'En cours',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF667EEA),
-                      ),
-                    ),
-                  ),
-                if (statut == _TourStatut.moi)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF764BA2).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'Votre tour',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF764BA2),
-                      ),
-                    ),
-                  ),
-                if (statut == _TourStatut.passe)
-                  Text(
-                    'Reçu',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF27AE60).withValues(alpha: 0.8),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMembresProgress(BuildContext context) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-              builder: (context) => const MembresTontineScreen()),
+            builder: (context) => MembresTontineScreen(
+              tontineId: tontine.id,
+              tontineNom: tontine.nom,
+              membresUids: tontine.membresUids,
+              adminUid: tontine.adminUid,
+            ),
+          ),
         );
       },
       child: Container(
@@ -917,8 +488,8 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                 Row(
                   children: [
                     Text(
-                      '15/20',
-                      style: TextStyle(
+                      '${tontine.membresUids.length}/${tontine.maxMembres}',
+                      style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                         color: AppColors.primaryDark,
@@ -938,7 +509,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: LinearProgressIndicator(
-                value: 15 / 20,
+                value: tontine.membresUids.length / tontine.maxMembres,
                 minHeight: 8,
                 backgroundColor: AppColors.primaryDark.withValues(alpha: 0.1),
                 valueColor:
@@ -950,13 +521,13 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '5 places restantes',
-                  style: TextStyle(
+                  '$placesRestantes place${placesRestantes > 1 ? 's' : ''} restante${placesRestantes > 1 ? 's' : ''}',
+                  style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.grey,
                   ),
                 ),
-                Text(
+                const Text(
                   'Voir les membres',
                   style: TextStyle(
                     fontSize: 12,
@@ -972,7 +543,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
     );
   }
 
-  Widget _buildAdminSection(BuildContext context) {
+  Widget _buildAdminSection(BuildContext context, Tontine tontine) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -1025,7 +596,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (context) => AjouterMembreScreen(tontineId: widget.tontineId ?? '')),
+                          builder: (context) => AjouterMembreScreen(tontineId: tontine.id)),
                     );
                   },
                 ),
@@ -1035,14 +606,13 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                 child: _buildAdminButton(
                   icon: Icons.pending_actions_outlined,
                   label: 'Demandes',
-                  badge: '3',
                   color: const Color(0xFFE67E22),
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (context) =>
-                              DemandesAdhesionScreen(tontineId: widget.tontineId ?? '')),
+                              DemandesAdhesionScreen(tontineId: tontine.id)),
                     );
                   },
                 ),
@@ -1059,7 +629,6 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
     required String label,
     required Color color,
     required VoidCallback onTap,
-    String? badge,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -1086,32 +655,13 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (badge != null) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  badge,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.white,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDescriptionCard() {
+  Widget _buildDescriptionCard(Tontine tontine) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -1153,9 +703,9 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          const Text(
-            'Epargne familiale pour l\'entraide et l\'épargne collective. Rotation mensuelle avec tirage au sort équitable.',
-            style: TextStyle(
+          Text(
+            tontine.description,
+            style: const TextStyle(
               fontSize: 14,
               color: AppColors.grey,
               height: 1.6,
@@ -1166,7 +716,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
     );
   }
 
-  Widget _buildInformationsCard() {
+  Widget _buildInformationsCard(Tontine tontine) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -1196,13 +746,19 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
           _buildInfoRow(
             Icons.location_on_outlined,
             'Localisation',
-            'Dakar, Sénégal',
+            tontine.localite.isNotEmpty ? tontine.localite : 'Non renseignée',
           ),
           const SizedBox(height: 14),
           _buildInfoRow(
             Icons.person_outline,
             'Administrateur',
-            'Fatou Badji',
+            tontine.adminNom,
+          ),
+          const SizedBox(height: 14),
+          _buildInfoRow(
+            Icons.monetization_on_outlined,
+            'Cotisation',
+            '${_formatMontant(tontine.montantCotisation)} FCFA',
           ),
         ],
       ),
@@ -1297,7 +853,10 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
     );
   }
 
-  Widget _buildBottomActions(BuildContext context) {
+  Widget _buildBottomActions(BuildContext context, Tontine tontine) {
+    final user = SessionService.currentAppUser;
+    final isMember = user != null && tontine.membresUids.contains(user.uid);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
       decoration: BoxDecoration(
@@ -1312,63 +871,117 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
       ),
       child: Row(
         children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () {},
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primaryDark,
-                side: const BorderSide(color: AppColors.primaryDark, width: 1.5),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: const Text(
-                'REJOINDRE',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const PaiementScreen()),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.payment, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    'COTISER',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
+          if (!isMember)
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () async {
+                  if (user == null) return;
+                  try {
+                    await _tontineService.envoyerDemande(
+                      tontineId: tontine.id,
+                      userUid: user.uid,
+                      userNom: user.nom,
+                      userTelephone: user.telephone,
+                      userLocalite: user.localite,
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Demande envoyée avec succès')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Erreur: $e')),
+                      );
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryDark,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                ],
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text(
+                  'REJOINDRE',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
               ),
             ),
-          ),
+          if (isMember) ...[
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => MembresTontineScreen(
+                        tontineId: tontine.id,
+                        tontineNom: tontine.nom,
+                        membresUids: tontine.membresUids,
+                        adminUid: tontine.adminUid,
+                      ),
+                    ),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryDark,
+                  side: const BorderSide(color: AppColors.primaryDark, width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text(
+                  'MEMBRES',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const PaiementScreen()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.payment, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'COTISER',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
-
-enum _TourStatut { passe, encours, avenir, moi }

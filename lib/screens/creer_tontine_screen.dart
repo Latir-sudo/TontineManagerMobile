@@ -50,7 +50,12 @@ class _CreerTontineScreenState extends State<CreerTontineScreen> {
     }
 
     final user = SessionService.currentAppUser;
-    if (user == null) return;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session expirée. Reconnectez-vous.')),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 

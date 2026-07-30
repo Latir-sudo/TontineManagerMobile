@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../services/tontine_service.dart';
 import '../models/demande_adhesion.dart';
@@ -136,7 +135,11 @@ class _DemandesAdhesionScreenState extends State<DemandesAdhesionScreen> {
   }
 
   Widget _buildDemandeCard(DemandeAdhesion demande) {
-    final dateFormat = DateFormat('dd MMM yyyy');
+    final mois = [
+      '', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin',
+      'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'
+    ];
+    final dateStr = '${demande.date.day} ${mois[demande.date.month]} ${demande.date.year}';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -220,7 +223,7 @@ class _DemandesAdhesionScreenState extends State<DemandesAdhesionScreen> {
                   size: 14, color: AppColors.grey),
               const SizedBox(width: 4),
               Text(
-                dateFormat.format(demande.date),
+                dateStr,
                 style: const TextStyle(fontSize: 13, color: AppColors.grey),
               ),
             ],

@@ -1,25 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
-
-enum NotificationType { paiement, rappel, nouveauMembre, retard }
-
-class NotificationItem {
-  final String title;
-  final String description;
-  final String tontineName;
-  final String timeAgo;
-  final NotificationType type;
-  final bool isRead;
-
-  const NotificationItem({
-    required this.title,
-    required this.description,
-    required this.tontineName,
-    required this.timeAgo,
-    required this.type,
-    this.isRead = true,
-  });
-}
+import '../models/app_notification.dart';
+import '../services/session_service.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -29,60 +12,104 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  late List<NotificationItem> _notifications;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<AppNotification> _notifications = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _notifications = [
-      const NotificationItem(
-        title: 'Paiement validé',
-        description: 'Votre cotisation de 5 000 FCFA a été validée',
-        tontineName: 'Tontine Famille',
-        timeAgo: '2h',
-        type: NotificationType.paiement,
-        isRead: false,
-      ),
-      const NotificationItem(
-        title: 'Rappel de cotisation',
-        description: 'Votre cotisation arrive à échéance dans 3 jours',
-        tontineName: 'Épargne Quartier',
-        timeAgo: '5h',
-        type: NotificationType.rappel,
-        isRead: false,
-      ),
-      const NotificationItem(
-        title: 'Nouveau membre',
-        description: 'Khadija Sow a rejoint votre tontine',
-        tontineName: 'Tontine Famille',
-        timeAgo: '1j',
-        type: NotificationType.nouveauMembre,
-      ),
-      const NotificationItem(
-        title: 'Cotisation en retard',
-        description: 'Votre cotisation de Mai est en retard',
-        tontineName: 'Épargne Quartier',
-        timeAgo: '1j',
-        type: NotificationType.retard,
-      ),
-    ];
+    _loadNotifications();
+  }
+
+  Future<void> _loadNotifications() async {
+    final user = SessionService.currentAppUser;
+    if (user == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final query = await _firestore
+          .collection('notifications')
+          .where('userUid', isEqualTo: user.uid)
+          .get();
+
+      final notifs = query.docs
+          .map((doc) => AppNotification.fromMap(doc.data()))
+          .toList();
+      notifs.sort((a, b) => b.date.compareTo(a.date));
+
+      if (mounted) {
+        setState(() {
+          _notifications = notifs;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   int get _unreadCount => _notifications.where((n) => !n.isRead).length;
 
-  void _markAllAsRead() {
-    setState(() {
-      _notifications = _notifications
-          .map((n) => NotificationItem(
-                title: n.title,
-                description: n.description,
-                tontineName: n.tontineName,
-                timeAgo: n.timeAgo,
-                type: n.type,
-                isRead: true,
-              ))
-          .toList();
-    });
+  Future<void> _markAllAsRead() async {
+    final user = SessionService.currentAppUser;
+    if (user == null) return;
+
+    try {
+      final query = await _firestore
+          .collection('notifications')
+          .where('userUid', isEqualTo: user.uid)
+          .where('isRead', isEqualTo: false)
+          .get();
+
+      for (final doc in query.docs) {
+        await doc.reference.update({'isRead': true});
+      }
+
+      setState(() {
+        _notifications = _notifications.map((n) => AppNotification(
+          id: n.id,
+          userUid: n.userUid,
+          title: n.title,
+          description: n.description,
+          tontineNom: n.tontineNom,
+          type: n.type,
+          isRead: true,
+          date: n.date,
+        )).toList();
+      });
+    } catch (e) {
+      // Marquer localement en cas d'erreur réseau
+      setState(() {
+        _notifications = _notifications.map((n) => AppNotification(
+          id: n.id,
+          userUid: n.userUid,
+          title: n.title,
+          description: n.description,
+          tontineNom: n.tontineNom,
+          type: n.type,
+          isRead: true,
+          date: n.date,
+        )).toList();
+      });
+    }
+  }
+
+  String _formatTimeAgo(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}min';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}j';
+    } else {
+      return '${(diff.inDays / 7).floor()}sem';
+    }
   }
 
   @override
@@ -119,22 +146,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          if (_unreadCount > 0) _buildUnreadBanner(),
-          Expanded(
-            child: _notifications.isEmpty
-                ? _buildEmptyState()
-                : ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    itemCount: _notifications.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) =>
-                        _buildNotificationCard(_notifications[index]),
-                  ),
-          ),
-        ],
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                if (_unreadCount > 0) _buildUnreadBanner(),
+                Expanded(
+                  child: _notifications.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          itemCount: _notifications.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) =>
+                              _buildNotificationCard(_notifications[index]),
+                        ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -186,7 +215,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _buildNotificationCard(NotificationItem notification) {
+  Widget _buildNotificationCard(AppNotification notification) {
     final config = _getNotificationConfig(notification.type);
 
     return Container(
@@ -236,7 +265,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       ),
                     ),
                     Text(
-                      notification.timeAgo,
+                      _formatTimeAgo(notification.date),
                       style: const TextStyle(fontSize: 14, color: AppColors.grey),
                     ),
                   ],
@@ -251,7 +280,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      notification.tontineName,
+                      notification.tontineNom,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -277,31 +306,37 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  _NotificationConfig _getNotificationConfig(NotificationType type) {
+  _NotificationConfig _getNotificationConfig(String type) {
     switch (type) {
-      case NotificationType.paiement:
+      case 'paiement':
         return _NotificationConfig(
           icon: Icons.check_circle_outline,
           iconColor: const Color(0xFF4CAF50),
           backgroundColor: const Color(0xFFE8F5E9),
         );
-      case NotificationType.rappel:
+      case 'rappel':
         return _NotificationConfig(
           icon: Icons.access_time,
           iconColor: const Color(0xFFFF9800),
           backgroundColor: const Color(0xFFFFF3E0),
         );
-      case NotificationType.nouveauMembre:
+      case 'nouveau_membre':
         return _NotificationConfig(
           icon: Icons.person_add_outlined,
           iconColor: const Color(0xFF7C4DFF),
           backgroundColor: const Color(0xFFF3E5F5),
         );
-      case NotificationType.retard:
+      case 'retard':
         return _NotificationConfig(
           icon: Icons.error_outline,
           iconColor: const Color(0xFFF44336),
           backgroundColor: const Color(0xFFFFEBEE),
+        );
+      default:
+        return _NotificationConfig(
+          icon: Icons.notifications_outlined,
+          iconColor: AppColors.primaryDark,
+          backgroundColor: AppColors.lightGrey,
         );
     }
   }

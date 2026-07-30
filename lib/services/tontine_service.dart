@@ -41,24 +41,79 @@ class TontineService {
   }
 
   Future<List<Tontine>> getMesTontines(String userUid) async {
-    final query = await _firestore
-        .collection('tontines')
-        .where('membresUids', arrayContains: userUid)
-        .get();
+    try {
+      // Chercher avec l'uid actuel
+      var query = await _firestore
+          .collection('tontines')
+          .where('membresUids', arrayContains: userUid)
+          .get();
 
-    return query.docs.map((doc) => Tontine.fromMap(doc.data())).toList();
+      if (query.docs.isNotEmpty) {
+        return query.docs.map((doc) => Tontine.fromMap(doc.data())).toList();
+      }
+
+      // Si rien trouvé, chercher les anciens uids via le téléphone
+      final userDocs = await _firestore
+          .collection('users')
+          .where('uid', isEqualTo: userUid)
+          .get();
+
+      if (userDocs.docs.isEmpty) return [];
+
+      final telephone = userDocs.docs.first.data()['telephone'] as String;
+      final allUserDocs = await _firestore
+          .collection('users')
+          .where('telephone', isEqualTo: telephone)
+          .get();
+
+      for (final doc in allUserDocs.docs) {
+        final oldUid = doc.data()['uid'] as String;
+        if (oldUid == userUid) continue;
+
+        query = await _firestore
+            .collection('tontines')
+            .where('membresUids', arrayContains: oldUid)
+            .get();
+
+        if (query.docs.isNotEmpty) {
+          // Migrer vers le uid actuel
+          for (final tDoc in query.docs) {
+            await tDoc.reference.update({
+              'membresUids': FieldValue.arrayRemove([oldUid]),
+            });
+            await tDoc.reference.update({
+              'membresUids': FieldValue.arrayUnion([userUid]),
+            });
+            if (tDoc.data()['adminUid'] == oldUid) {
+              await tDoc.reference.update({'adminUid': userUid});
+            }
+          }
+          // Relire après migration
+          final updated = await _firestore
+              .collection('tontines')
+              .where('membresUids', arrayContains: userUid)
+              .get();
+          return updated.docs.map((doc) => Tontine.fromMap(doc.data())).toList();
+        }
+      }
+
+      return [];
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<List<Tontine>> getTontinesDisponibles(String userUid) async {
-    final query = await _firestore
-        .collection('tontines')
-        .where('isActive', isEqualTo: true)
-        .get();
+    try {
+      final query = await _firestore.collection('tontines').get();
 
-    return query.docs
-        .map((doc) => Tontine.fromMap(doc.data()))
-        .where((t) => !t.membresUids.contains(userUid))
-        .toList();
+      return query.docs
+          .map((doc) => Tontine.fromMap(doc.data()))
+          .where((t) => t.isActive && !t.membresUids.contains(userUid))
+          .toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<Tontine?> getTontine(String tontineId) async {
@@ -104,13 +159,18 @@ class TontineService {
   }
 
   Future<List<Cotisation>> getHistoriqueCotisations(String userUid) async {
-    final query = await _firestore
-        .collection('cotisations')
-        .where('userUid', isEqualTo: userUid)
-        .orderBy('date', descending: true)
-        .get();
+    try {
+      final query = await _firestore
+          .collection('cotisations')
+          .where('userUid', isEqualTo: userUid)
+          .get();
 
-    return query.docs.map((doc) => Cotisation.fromMap(doc.data())).toList();
+      final cotisations = query.docs.map((doc) => Cotisation.fromMap(doc.data())).toList();
+      cotisations.sort((a, b) => b.date.compareTo(a.date));
+      return cotisations;
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<int> getTotalCotise(String userUid) async {
@@ -148,15 +208,19 @@ class TontineService {
 
   Future<List<DemandeAdhesion>> getDemandesPourTontine(
       String tontineId) async {
-    final query = await _firestore
-        .collection('demandes')
-        .where('tontineId', isEqualTo: tontineId)
-        .where('statut', isEqualTo: 'en_attente')
-        .get();
+    try {
+      final query = await _firestore
+          .collection('demandes')
+          .where('tontineId', isEqualTo: tontineId)
+          .get();
 
-    return query.docs
-        .map((doc) => DemandeAdhesion.fromMap(doc.data()))
-        .toList();
+      return query.docs
+          .map((doc) => DemandeAdhesion.fromMap(doc.data()))
+          .where((d) => d.statut == 'en_attente')
+          .toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> accepterDemande(String demandeId, String tontineId,

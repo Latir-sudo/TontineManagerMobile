@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../services/tontine_service.dart';
 import '../services/session_service.dart';
@@ -200,8 +199,12 @@ class _HistoriqueCotisationScreenState
 
   Widget _buildCotisationCard(Cotisation cotisation) {
     final isSuccess = cotisation.statut == 'payee';
-    final dateFormat = DateFormat('dd MMM yyyy', 'fr_FR');
-    final timeFormat = DateFormat('HH:mm');
+    final mois = [
+      '', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin',
+      'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'
+    ];
+    final dateStr = '${cotisation.date.day} ${mois[cotisation.date.month]} ${cotisation.date.year}';
+    final timeStr = '${cotisation.date.hour.toString().padLeft(2, '0')}:${cotisation.date.minute.toString().padLeft(2, '0')}';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -306,7 +309,7 @@ class _HistoriqueCotisationScreenState
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        dateFormat.format(cotisation.date),
+                        dateStr,
                         style: const TextStyle(fontSize: 11, color: AppColors.grey),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -315,7 +318,7 @@ class _HistoriqueCotisationScreenState
                     const Icon(Icons.access_time, size: 12, color: AppColors.grey),
                     const SizedBox(width: 4),
                     Text(
-                      timeFormat.format(cotisation.date),
+                      timeStr,
                       style: const TextStyle(fontSize: 11, color: AppColors.grey),
                     ),
                   ],

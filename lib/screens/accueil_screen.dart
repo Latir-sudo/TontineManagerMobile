@@ -7,6 +7,7 @@ import 'creer_tontine_screen.dart';
 import 'detail_tontine_screen.dart';
 import 'historique_cotisation_screen.dart';
 import 'notifications_screen.dart';
+import 'tontines_disponibles_screen.dart';
 
 class AccueilScreen extends StatefulWidget {
   const AccueilScreen({super.key});
@@ -43,17 +44,23 @@ class _AccueilScreenState extends State<AccueilScreen> {
     final user = SessionService.currentAppUser;
     if (user != null) {
       _nomUtilisateur = user.nom;
-      final tontines = await _tontineService.getMesTontines(user.uid);
-      final total = await _tontineService.getTotalCotise(user.uid);
-      if (mounted) {
-        setState(() {
-          _mesTontines = tontines;
-          _totalCotise = total;
-          _isLoading = false;
-        });
+      try {
+        final tontines = await _tontineService.getMesTontines(user.uid)
+            .timeout(const Duration(seconds: 8), onTimeout: () => []);
+        final total = await _tontineService.getTotalCotise(user.uid)
+            .timeout(const Duration(seconds: 8), onTimeout: () => 0);
+        if (mounted) {
+          setState(() {
+            _mesTontines = tontines;
+            _totalCotise = total;
+            _isLoading = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) setState(() => _isLoading = false);
       }
     } else {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -400,7 +407,14 @@ class _AccueilScreenState extends State<AccueilScreen> {
               _buildActionCard(
                 icon: Icons.groups_outlined,
                 label: 'Explorez',
-                onTap: () {},
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const TontinesDisponiblesScreen(),
+                    ),
+                  );
+                },
               ),
               _buildActionCard(
                 icon: Icons.event_outlined,
@@ -422,6 +436,51 @@ class _AccueilScreenState extends State<AccueilScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
+        if (_mesTontines.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Row(
+                  children: [
+                    Icon(Icons.event_outlined, color: AppColors.primaryDark, size: 22),
+                    SizedBox(width: 10),
+                    Text(
+                      'Mes tours',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.darkText,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                const Icon(Icons.event_busy_outlined, size: 48, color: AppColors.grey),
+                const SizedBox(height: 12),
+                const Text(
+                  'Aucune tontine active',
+                  style: TextStyle(fontSize: 15, color: AppColors.grey),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        }
+
+        final tontine = _mesTontines.first;
+        final montantTour = tontine.montantCotisation * tontine.membresUids.length;
+
         return Padding(
           padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
           child: Column(
@@ -451,7 +510,6 @@ class _AccueilScreenState extends State<AccueilScreen> {
                 ],
               ),
               const SizedBox(height: 20),
-              // Prochaine cotisation
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -477,7 +535,7 @@ class _AccueilScreenState extends State<AccueilScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'Prochaine cotisation',
                             style: TextStyle(
                               fontSize: 13,
@@ -486,18 +544,18 @@ class _AccueilScreenState extends State<AccueilScreen> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          const Text(
-                            '28 Juillet 2026',
-                            style: TextStyle(
+                          Text(
+                            tontine.nom,
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
                               color: AppColors.darkText,
                             ),
                           ),
                           const SizedBox(height: 2),
-                          const Text(
-                            'Tontine Famille · 5 000 FCFA',
-                            style: TextStyle(fontSize: 13, color: AppColors.grey),
+                          Text(
+                            '${tontine.frequence} · ${_formatMontant(tontine.montantCotisation)} FCFA',
+                            style: const TextStyle(fontSize: 13, color: AppColors.grey),
                           ),
                         ],
                       ),
@@ -506,7 +564,6 @@ class _AccueilScreenState extends State<AccueilScreen> {
                 ),
               ),
               const SizedBox(height: 14),
-              // Prochain tour à recevoir
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -532,27 +589,27 @@ class _AccueilScreenState extends State<AccueilScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Prochain tour à recevoir',
+                          const Text(
+                            'Tour à recevoir',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
-                              color: const Color(0xFF27AE60),
+                              color: Color(0xFF27AE60),
                             ),
                           ),
                           const SizedBox(height: 4),
-                          const Text(
-                            '15 Septembre 2026',
-                            style: TextStyle(
+                          Text(
+                            tontine.nom,
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
                               color: AppColors.darkText,
                             ),
                           ),
                           const SizedBox(height: 2),
-                          const Text(
-                            'Tontine Famille · 75 000 FCFA',
-                            style: TextStyle(fontSize: 13, color: AppColors.grey),
+                          Text(
+                            '${_formatMontant(montantTour)} FCFA · ${tontine.membresUids.length} membres',
+                            style: const TextStyle(fontSize: 13, color: AppColors.grey),
                           ),
                         ],
                       ),

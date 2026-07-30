@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/session_service.dart';
 
 class ProfilScreen extends StatelessWidget {
   const ProfilScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final user = SessionService.currentAppUser;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: SafeArea(
@@ -13,14 +16,17 @@ class ProfilScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildHeader(context),
+              _buildHeader(context, user?.nom ?? '', user?.telephone ?? ''),
               const SizedBox(height: 24),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildContactCard(),
+                    _buildContactCard(
+                      telephone: user?.telephone ?? '',
+                      localite: user?.localite ?? '',
+                    ),
                     const SizedBox(height: 28),
                     const Padding(
                       padding: EdgeInsets.only(left: 4),
@@ -49,7 +55,7 @@ class ProfilScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, String nom, String telephone) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
@@ -63,22 +69,10 @@ class ProfilScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.arrow_back_ios_new,
-                      color: AppColors.white, size: 18),
-                ),
-              ),
-              const SizedBox(width: 14),
-              const Text(
+              SizedBox(width: 14),
+              Text(
                 'Mon Profil',
                 style: TextStyle(
                   fontSize: 22,
@@ -105,16 +99,25 @@ class ProfilScreen extends StatelessWidget {
                     color: AppColors.accent,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.person, color: AppColors.white, size: 30),
+                  child: Center(
+                    child: Text(
+                      nom.isNotEmpty ? nom[0].toUpperCase() : 'U',
+                      style: const TextStyle(
+                        color: AppColors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Amadou Diop',
-                        style: TextStyle(
+                      Text(
+                        nom,
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: AppColors.white,
@@ -122,47 +125,13 @@ class ProfilScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'amadou.diop@email.com',
+                        telephone,
                         style: TextStyle(
                           fontSize: 13,
                           color: AppColors.white.withValues(alpha: 0.7),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'Compte vérifié',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.green,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () {},
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child:
-                        const Icon(Icons.edit, color: AppColors.white, size: 18),
                   ),
                 ),
               ],
@@ -173,7 +142,7 @@ class ProfilScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildContactCard() {
+  Widget _buildContactCard({required String telephone, required String localite}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -195,7 +164,7 @@ class ProfilScreen extends StatelessWidget {
             iconColor: const Color(0xFF5B9BD5),
             iconBg: const Color(0xFF5B9BD5),
             label: 'Téléphone',
-            value: '+221 77 495 45 67',
+            value: telephone,
           ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 14),
@@ -206,18 +175,7 @@ class ProfilScreen extends StatelessWidget {
             iconColor: const Color(0xFF8E6FBF),
             iconBg: const Color(0xFF8E6FBF),
             label: 'Localité',
-            value: 'Dakar, Sénégal',
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
-            child: Divider(height: 1),
-          ),
-          _buildContactRow(
-            icon: Icons.email_outlined,
-            iconColor: const Color(0xFFE87FA0),
-            iconBg: const Color(0xFFE87FA0),
-            label: 'Email',
-            value: 'amadou.diop@email.com',
+            value: localite,
           ),
         ],
       ),
@@ -303,7 +261,7 @@ class ProfilScreen extends StatelessWidget {
             iconColor: const Color(0xFF27AE60),
             iconBg: const Color(0xFF27AE60),
             title: 'Sécurité',
-            subtitle: 'Mot de passe et connexion',
+            subtitle: 'Code PIN et connexion',
             onTap: () {},
           ),
           const Padding(

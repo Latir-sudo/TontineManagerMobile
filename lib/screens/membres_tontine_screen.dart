@@ -1,8 +1,21 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../models/app_user.dart';
+import '../services/tontine_service.dart';
 
 class MembresTontineScreen extends StatefulWidget {
-  const MembresTontineScreen({super.key});
+  final String tontineId;
+  final String tontineNom;
+  final List<String> membresUids;
+  final String adminUid;
+
+  const MembresTontineScreen({
+    super.key,
+    required this.tontineId,
+    required this.tontineNom,
+    required this.membresUids,
+    required this.adminUid,
+  });
 
   @override
   State<MembresTontineScreen> createState() => _MembresTontineScreenState();
@@ -10,138 +23,39 @@ class MembresTontineScreen extends StatefulWidget {
 
 class _MembresTontineScreenState extends State<MembresTontineScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final TontineService _tontineService = TontineService();
   String _searchQuery = '';
+  List<AppUser> _membres = [];
+  bool _isLoading = true;
 
-  final List<Map<String, dynamic>> _membres = [
-    {
-      'prenom': 'Fatou',
-      'nom': 'Badji',
-      'telephone': '+221 77 123 45 67',
-      'photoUrl': null,
-      'isAdmin': true,
-      'isOnline': true,
-    },
-    {
-      'prenom': 'Moussa',
-      'nom': 'Diallo',
-      'telephone': '+221 78 234 56 78',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': true,
-    },
-    {
-      'prenom': 'Khadija',
-      'nom': 'Sow',
-      'telephone': '+221 76 345 67 89',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': false,
-    },
-    {
-      'prenom': 'Ibrahima',
-      'nom': 'Ndiaye',
-      'telephone': '+221 77 456 78 90',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': true,
-    },
-    {
-      'prenom': 'Aminata',
-      'nom': 'Fall',
-      'telephone': '+221 70 567 89 01',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': false,
-    },
-    {
-      'prenom': 'Ousmane',
-      'nom': 'Ba',
-      'telephone': '+221 78 678 90 12',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': false,
-    },
-    {
-      'prenom': 'Mariama',
-      'nom': 'Diop',
-      'telephone': '+221 76 789 01 23',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': true,
-    },
-    {
-      'prenom': 'Abdoulaye',
-      'nom': 'Sarr',
-      'telephone': '+221 77 890 12 34',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': false,
-    },
-    {
-      'prenom': 'Aïssatou',
-      'nom': 'Gueye',
-      'telephone': '+221 70 901 23 45',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': true,
-    },
-    {
-      'prenom': 'Mamadou',
-      'nom': 'Sy',
-      'telephone': '+221 78 012 34 56',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': false,
-    },
-    {
-      'prenom': 'Ndèye',
-      'nom': 'Mbaye',
-      'telephone': '+221 76 123 45 67',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': true,
-    },
-    {
-      'prenom': 'Cheikh',
-      'nom': 'Thiam',
-      'telephone': '+221 77 234 56 78',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': false,
-    },
-    {
-      'prenom': 'Sokhna',
-      'nom': 'Dieng',
-      'telephone': '+221 70 345 67 89',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': true,
-    },
-    {
-      'prenom': 'Pape',
-      'nom': 'Faye',
-      'telephone': '+221 78 456 78 90',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': false,
-    },
-    {
-      'prenom': 'Dieynaba',
-      'nom': 'Kane',
-      'telephone': '+221 76 567 89 01',
-      'photoUrl': null,
-      'isAdmin': false,
-      'isOnline': true,
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadMembres();
+  }
 
-  List<Map<String, dynamic>> get _filteredMembres {
+  Future<void> _loadMembres() async {
+    try {
+      final membres = await _tontineService.getMembresTontine(widget.membresUids);
+      if (mounted) {
+        setState(() {
+          _membres = membres;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  List<AppUser> get _filteredMembres {
     if (_searchQuery.isEmpty) return _membres;
     final query = _searchQuery.toLowerCase();
     return _membres.where((m) {
-      final fullName = '${m['prenom']} ${m['nom']}'.toLowerCase();
-      final phone = (m['telephone'] as String).replaceAll(' ', '');
-      return fullName.contains(query) || phone.contains(query);
+      return m.nom.toLowerCase().contains(query) ||
+          m.telephone.replaceAll(' ', '').contains(query);
     }).toList();
   }
 
@@ -161,7 +75,11 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
             _buildHeader(context),
             _buildSearchBar(),
             _buildMemberCount(),
-            Expanded(child: _buildMembersList()),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _buildMembersList(),
+            ),
           ],
         ),
       ),
@@ -237,7 +155,7 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
             children: [
               const SizedBox(width: 44),
               Text(
-                'Epargne solidaire',
+                widget.tontineNom,
                 style: TextStyle(
                   fontSize: 14,
                   color: AppColors.white.withValues(alpha: 0.7),
@@ -293,7 +211,6 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
   }
 
   Widget _buildMemberCount() {
-    final onlineCount = _filteredMembres.where((m) => m['isOnline']).length;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
       child: Row(
@@ -304,32 +221,6 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: AppColors.darkText,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            width: 4,
-            height: 4,
-            decoration: const BoxDecoration(
-              color: AppColors.grey,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(
-              color: Color(0xFF4CAF50),
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            '$onlineCount en ligne',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.grey,
             ),
           ),
         ],
@@ -348,7 +239,7 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
             Icon(Icons.person_search_rounded,
                 size: 56, color: AppColors.grey.withValues(alpha: 0.5)),
             const SizedBox(height: 12),
-            Text(
+            const Text(
               'Aucun membre trouvé',
               style: TextStyle(
                 fontSize: 15,
@@ -360,8 +251,8 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
       );
     }
 
-    final admin = membres.where((m) => m['isAdmin']).toList();
-    final others = membres.where((m) => !m['isAdmin']).toList();
+    final admin = membres.where((m) => m.uid == widget.adminUid).toList();
+    final others = membres.where((m) => m.uid != widget.adminUid).toList();
     final sortedMembres = [...admin, ...others];
 
     return ListView.builder(
@@ -369,20 +260,16 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
       itemCount: sortedMembres.length,
       itemBuilder: (context, index) {
         final membre = sortedMembres[index];
-        final isLast = index == sortedMembres.length - 1;
-        return _buildMembreItem(membre, isLast);
+        final isAdmin = membre.uid == widget.adminUid;
+        return _buildMembreItem(membre, isAdmin);
       },
     );
   }
 
-  Widget _buildMembreItem(Map<String, dynamic> membre, bool isLast) {
-    final String prenom = membre['prenom'];
-    final String nom = membre['nom'];
-    final String telephone = membre['telephone'];
-    final bool isAdmin = membre['isAdmin'];
-    final bool isOnline = membre['isOnline'];
-    final String? photoUrl = membre['photoUrl'];
-    final String initials = '${prenom[0]}${nom[0]}';
+  Widget _buildMembreItem(AppUser membre, bool isAdmin) {
+    final String initials = membre.nom.isNotEmpty
+        ? membre.nom.split(' ').map((w) => w.isNotEmpty ? w[0] : '').take(2).join()
+        : 'U';
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -402,77 +289,40 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () => _showMembreBottomSheet(membre),
+          onTap: () => _showMembreBottomSheet(membre, isAdmin),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
               children: [
-                Stack(
-                  children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: photoUrl != null
-                            ? null
-                            : LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: _getAvatarGradient(prenom),
-                              ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _getAvatarGradient(prenom)[0]
-                                .withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: photoUrl != null
-                          ? ClipOval(
-                              child: Image.network(
-                                photoUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Center(
-                                  child: Text(
-                                    initials,
-                                    style: const TextStyle(
-                                      color: AppColors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 18,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Center(
-                              child: Text(
-                                initials,
-                                style: const TextStyle(
-                                  color: AppColors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 18,
-                                ),
-                              ),
-                            ),
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: _getAvatarGradient(membre.nom),
                     ),
-                    if (isOnline)
-                      Positioned(
-                        bottom: 2,
-                        right: 2,
-                        child: Container(
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.white, width: 2.5),
-                          ),
-                        ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _getAvatarGradient(membre.nom)[0]
+                            .withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
                       ),
-                  ],
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      initials.toUpperCase(),
+                      style: const TextStyle(
+                        color: AppColors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -483,7 +333,7 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
                         children: [
                           Flexible(
                             child: Text(
-                              '$prenom $nom',
+                              membre.nom,
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
@@ -523,8 +373,8 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
                           ),
                           const SizedBox(width: 5),
                           Text(
-                            telephone,
-                            style: TextStyle(
+                            membre.telephone,
+                            style: const TextStyle(
                               fontSize: 13,
                               color: AppColors.grey,
                               letterSpacing: 0.3,
@@ -548,12 +398,10 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
     );
   }
 
-  void _showMembreBottomSheet(Map<String, dynamic> membre) {
-    final String prenom = membre['prenom'];
-    final String nom = membre['nom'];
-    final String telephone = membre['telephone'];
-    final bool isAdmin = membre['isAdmin'];
-    final String initials = '${prenom[0]}${nom[0]}';
+  void _showMembreBottomSheet(AppUser membre, bool isAdmin) {
+    final String initials = membre.nom.isNotEmpty
+        ? membre.nom.split(' ').map((w) => w.isNotEmpty ? w[0] : '').take(2).join().toUpperCase()
+        : 'U';
 
     showModalBottomSheet(
       context: context,
@@ -567,7 +415,8 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
           ),
         ),
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
@@ -587,12 +436,11 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: _getAvatarGradient(prenom),
+                  colors: _getAvatarGradient(membre.nom),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color:
-                        _getAvatarGradient(prenom)[0].withValues(alpha: 0.3),
+                    color: _getAvatarGradient(membre.nom)[0].withValues(alpha: 0.3),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -611,7 +459,7 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              '$prenom $nom',
+              membre.nom,
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -669,7 +517,7 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        telephone,
+                        membre.telephone,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -682,6 +530,52 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
                 ],
               ),
             ),
+            if (membre.localite.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.lightGrey,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF8E6FBF).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.location_on_rounded,
+                          color: Color(0xFF8E6FBF), size: 20),
+                    ),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Localité',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          membre.localite,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.darkText,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             Row(
               children: [
@@ -705,6 +599,7 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
               ],
             ),
           ],
+        ),
         ),
       ),
     );
@@ -754,7 +649,7 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
       [const Color(0xFFFCCB90), const Color(0xFFD57EEB)],
       [const Color(0xFF84FAB0), const Color(0xFF8FD3F4)],
     ];
-    final index = name.codeUnitAt(0) % gradients.length;
+    final index = name.isNotEmpty ? name.codeUnitAt(0) % gradients.length : 0;
     return gradients[index];
   }
 }

@@ -39,21 +39,24 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _checkSession();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkSession());
   }
 
   Future<void> _checkSession() async {
-    final sessionService = SessionService();
-    if (sessionService.isLoggedIn) {
-      final user = await sessionService.loadCurrentUser();
-      if (user != null && mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
-        );
-        return;
+    try {
+      final sessionService = SessionService();
+      if (sessionService.isLoggedIn) {
+        final user = await sessionService.loadCurrentUser()
+            .timeout(const Duration(seconds: 5));
+        if (user != null && mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
+          );
+          return;
+        }
       }
-    }
+    } catch (_) {}
     if (mounted) {
       Navigator.pushReplacement(
         context,
