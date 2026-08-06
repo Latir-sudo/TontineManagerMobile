@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/app_user.dart';
 import '../services/tontine_service.dart';
+import '../services/session_service.dart';
 
 class MembresTontineScreen extends StatefulWidget {
   final String tontineId;
@@ -48,6 +49,116 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  bool get _currentUserIsAdmin {
+    final user = SessionService.currentAppUser;
+    if (user == null) return false;
+    return user.uid == widget.adminUid;
+  }
+
+  void _confirmerRetrait(AppUser membre) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE53935).withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.person_remove,
+                    color: Color(0xFFE53935), size: 28),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Retirer ce membre',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.darkText,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Voulez-vous vraiment retirer ${membre.nom} de la tontine ?',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 15, color: AppColors.grey),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.grey,
+                        side: BorderSide(
+                            color: AppColors.grey.withValues(alpha: 0.3)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text(
+                        'Annuler',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _tontineService.retirerMembre(
+                            widget.tontineId, membre.uid);
+                        if (!mounted) return;
+                        setState(() {
+                          _membres.removeWhere((m) => m.uid == membre.uid);
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                                '${membre.nom} a été retiré de la tontine'),
+                            backgroundColor: const Color(0xFFE53935),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE53935),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text(
+                        'Retirer',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   List<AppUser> get _filteredMembres {
@@ -385,6 +496,21 @@ class _MembresTontineScreenState extends State<MembresTontineScreen> {
                     ],
                   ),
                 ),
+                if (_currentUserIsAdmin && !isAdmin)
+                  GestureDetector(
+                    onTap: () => _confirmerRetrait(membre),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      margin: const EdgeInsets.only(right: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE53935).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.person_remove_outlined,
+                          size: 17, color: Color(0xFFE53935)),
+                    ),
+                  ),
                 Icon(
                   Icons.chevron_right_rounded,
                   color: AppColors.grey.withValues(alpha: 0.5),

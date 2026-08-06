@@ -8,6 +8,7 @@ import 'historique_cotisation_screen.dart';
 import 'membres_tontine_screen.dart';
 import 'demandes_adhesion_screen.dart';
 import 'ajouter_membre_screen.dart';
+import 'cotisations_tour_screen.dart';
 
 class DetailTontineScreen extends StatefulWidget {
   final String? tontineId;
@@ -36,13 +37,21 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
     }
 
     try {
-      final tontine = await _tontineService.getTontine(widget.tontineId!);
-      int mesCotisations = 0;
       final user = SessionService.currentAppUser;
-      if (user != null && tontine != null) {
-        final cotisations = await _tontineService.getHistoriqueCotisations(user.uid);
+      final results = await Future.wait([
+        _tontineService.getTontine(widget.tontineId!),
+        if (user != null)
+          _tontineService.getCotisationsTontine(widget.tontineId!)
+        else
+          Future.value(<dynamic>[]),
+      ]);
+
+      final tontine = results[0] as Tontine?;
+      int mesCotisations = 0;
+      if (user != null && tontine != null && results.length > 1) {
+        final cotisations = results[1] as List;
         mesCotisations = cotisations
-            .where((c) => c.tontineId == tontine.id && c.statut == 'payee')
+            .where((c) => c.userUid == user.uid && c.statut == 'payee')
             .length;
       }
       if (mounted) {
@@ -78,7 +87,8 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
 
   bool get _isAdmin {
     final user = SessionService.currentAppUser;
-    return user != null && _tontine != null && _tontine!.adminUid == user.uid;
+    if (user == null || _tontine == null) return false;
+    return _tontine!.adminUid == user.uid || _tontine!.adminNom == user.nom;
   }
 
   @override
@@ -145,6 +155,8 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                           ],
                           _buildInformationsCard(tontine),
                           const SizedBox(height: 24),
+                          _buildSuiviToursLink(context, tontine),
+                          const SizedBox(height: 14),
                           _buildHistoriqueLink(context),
                           const SizedBox(height: 24),
                         ],
@@ -596,7 +608,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (context) => AjouterMembreScreen(tontineId: tontine.id)),
+                          builder: (context) => AjouterMembreScreen(tontineId: tontine.id, tontineNom: tontine.nom)),
                     );
                   },
                 ),
@@ -803,6 +815,57 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
     );
   }
 
+  Widget _buildSuiviToursLink(BuildContext context, Tontine tontine) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (context) =>
+                  CotisationsTourScreen(tontineId: tontine.id)),
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4CAF50).withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.how_to_reg,
+                  color: Color(0xFF4CAF50), size: 18),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Suivi des cotisations par tour',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF4CAF50),
+                ),
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios,
+                size: 16, color: Color(0xFF4CAF50)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHistoriqueLink(BuildContext context) {
     return GestureDetector(
       onTap: () {
@@ -877,7 +940,7 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                 onPressed: () async {
                   if (user == null) return;
                   try {
-                    await _tontineService.envoyerDemande(
+                    final success = await _tontineService.envoyerDemande(
                       tontineId: tontine.id,
                       userUid: user.uid,
                       userNom: user.nom,
@@ -886,7 +949,14 @@ class _DetailTontineScreenState extends State<DetailTontineScreen> {
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Demande envoyée avec succès')),
+                        SnackBar(
+                          content: Text(success
+                              ? 'Demande envoyée avec succès'
+                              : 'Vous faites déjà partie de cette tontine'),
+                          backgroundColor: success
+                              ? const Color(0xFF27AE60)
+                              : const Color(0xFFF57C00),
+                        ),
                       );
                     }
                   } catch (e) {

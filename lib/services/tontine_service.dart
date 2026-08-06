@@ -19,6 +19,7 @@ class TontineService {
     required String adminNom,
     required int maxMembres,
     required DateTime dateDebut,
+    required String telephoneVersement,
   }) async {
     final doc = _firestore.collection('tontines').doc();
     final tontine = Tontine(
@@ -34,70 +35,27 @@ class TontineService {
       membresUids: [adminUid],
       dateDebut: dateDebut,
       createdAt: DateTime.now(),
+      telephoneVersement: telephoneVersement,
     );
 
     await doc.set(tontine.toMap());
     return tontine;
   }
 
+  Future<void> updateTelephoneVersement(String tontineId, String telephone) async {
+    await _firestore.collection('tontines').doc(tontineId).update({
+      'telephoneVersement': telephone,
+    });
+  }
+
   Future<List<Tontine>> getMesTontines(String userUid) async {
     try {
-      // Chercher avec l'uid actuel
-      var query = await _firestore
+      final query = await _firestore
           .collection('tontines')
           .where('membresUids', arrayContains: userUid)
           .get();
 
-      if (query.docs.isNotEmpty) {
-        return query.docs.map((doc) => Tontine.fromMap(doc.data())).toList();
-      }
-
-      // Si rien trouvé, chercher les anciens uids via le téléphone
-      final userDocs = await _firestore
-          .collection('users')
-          .where('uid', isEqualTo: userUid)
-          .get();
-
-      if (userDocs.docs.isEmpty) return [];
-
-      final telephone = userDocs.docs.first.data()['telephone'] as String;
-      final allUserDocs = await _firestore
-          .collection('users')
-          .where('telephone', isEqualTo: telephone)
-          .get();
-
-      for (final doc in allUserDocs.docs) {
-        final oldUid = doc.data()['uid'] as String;
-        if (oldUid == userUid) continue;
-
-        query = await _firestore
-            .collection('tontines')
-            .where('membresUids', arrayContains: oldUid)
-            .get();
-
-        if (query.docs.isNotEmpty) {
-          // Migrer vers le uid actuel
-          for (final tDoc in query.docs) {
-            await tDoc.reference.update({
-              'membresUids': FieldValue.arrayRemove([oldUid]),
-            });
-            await tDoc.reference.update({
-              'membresUids': FieldValue.arrayUnion([userUid]),
-            });
-            if (tDoc.data()['adminUid'] == oldUid) {
-              await tDoc.reference.update({'adminUid': userUid});
-            }
-          }
-          // Relire après migration
-          final updated = await _firestore
-              .collection('tontines')
-              .where('membresUids', arrayContains: userUid)
-              .get();
-          return updated.docs.map((doc) => Tontine.fromMap(doc.data())).toList();
-        }
-      }
-
-      return [];
+      return query.docs.map((doc) => Tontine.fromMap(doc.data())).toList();
     } catch (e) {
       return [];
     }
@@ -105,7 +63,10 @@ class TontineService {
 
   Future<List<Tontine>> getTontinesDisponibles(String userUid) async {
     try {
-      final query = await _firestore.collection('tontines').get();
+      final query = await _firestore
+          .collection('tontines')
+          .where('isActive', isEqualTo: true)
+          .get();
 
       return query.docs
           .map((doc) => Tontine.fromMap(doc.data()))
@@ -122,7 +83,16 @@ class TontineService {
     return Tontine.fromMap(doc.data()!);
   }
 
+  Future<bool> estDejaMembreTontine(String tontineId, String userUid) async {
+    final doc = await _firestore.collection('tontines').doc(tontineId).get();
+    if (!doc.exists) return false;
+    final membresUids = List<String>.from(doc.data()?['membresUids'] ?? []);
+    return membresUids.contains(userUid);
+  }
+
   Future<void> ajouterMembre(String tontineId, String userUid) async {
+    final dejaMembre = await estDejaMembreTontine(tontineId, userUid);
+    if (dejaMembre) return;
     await _firestore.collection('tontines').doc(tontineId).update({
       'membresUids': FieldValue.arrayUnion([userUid]),
     });
@@ -158,6 +128,21 @@ class TontineService {
     await doc.set(cotisation.toMap());
   }
 
+  Future<List<Cotisation>> getCotisationsTontine(String tontineId) async {
+    try {
+      final query = await _firestore
+          .collection('cotisations')
+          .where('tontineId', isEqualTo: tontineId)
+          .get();
+
+      final cotisations = query.docs.map((doc) => Cotisation.fromMap(doc.data())).toList();
+      cotisations.sort((a, b) => b.date.compareTo(a.date));
+      return cotisations;
+    } catch (e) {
+      return [];
+    }
+  }
+
   Future<List<Cotisation>> getHistoriqueCotisations(String userUid) async {
     try {
       final query = await _firestore
@@ -174,7 +159,24 @@ class TontineService {
   }
 
   Future<int> getTotalCotise(String userUid) async {
-    final cotisations = await getHistoriqueCotisations(userUid);
+    try {
+      final query = await _firestore
+          .collection('cotisations')
+          .where('userUid', isEqualTo: userUid)
+          .where('statut', isEqualTo: 'payee')
+          .get();
+
+      int total = 0;
+      for (final doc in query.docs) {
+        total += (doc.data()['montant'] as num).toInt();
+      }
+      return total;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  int calculerTotalFromList(List<Cotisation> cotisations) {
     int total = 0;
     for (final c in cotisations) {
       if (c.statut == 'payee') total += c.montant;
@@ -184,13 +186,16 @@ class TontineService {
 
   // ─── DEMANDES D'ADHÉSION ───
 
-  Future<void> envoyerDemande({
+  Future<bool> envoyerDemande({
     required String tontineId,
     required String userUid,
     required String userNom,
     required String userTelephone,
     required String userLocalite,
   }) async {
+    final dejaMembre = await estDejaMembreTontine(tontineId, userUid);
+    if (dejaMembre) return false;
+
     final doc = _firestore.collection('demandes').doc();
     final demande = DemandeAdhesion(
       id: doc.id,
@@ -204,6 +209,19 @@ class TontineService {
     );
 
     await doc.set(demande.toMap());
+
+    // Notifier l'admin de la tontine
+    final tontine = await getTontine(tontineId);
+    if (tontine != null) {
+      await _createNotification(
+        userUid: tontine.adminUid,
+        title: 'Nouvelle demande d\'adhésion',
+        description: '$userNom souhaite rejoindre votre tontine',
+        tontineNom: tontine.nom,
+        type: 'nouveau_membre',
+      );
+    }
+    return true;
   }
 
   Future<List<DemandeAdhesion>> getDemandesPourTontine(
@@ -223,20 +241,115 @@ class TontineService {
     }
   }
 
-  Future<void> accepterDemande(String demandeId, String tontineId,
+  Future<bool> accepterDemande(String demandeId, String tontineId,
       String userUid) async {
+    final dejaMembre = await estDejaMembreTontine(tontineId, userUid);
+    if (dejaMembre) return false;
+
     await _firestore
         .collection('demandes')
         .doc(demandeId)
         .update({'statut': 'acceptee'});
     await ajouterMembre(tontineId, userUid);
+
+    // Notifier le demandeur
+    final tontine = await getTontine(tontineId);
+    if (tontine != null) {
+      await _createNotification(
+        userUid: userUid,
+        title: 'Demande acceptée',
+        description: 'Vous avez été accepté dans la tontine ${tontine.nom}',
+        tontineNom: tontine.nom,
+        type: 'nouveau_membre',
+      );
+    }
+    return true;
   }
 
   Future<void> refuserDemande(String demandeId) async {
+    // Récupérer la demande pour notifier l'utilisateur
+    final demandeDoc = await _firestore.collection('demandes').doc(demandeId).get();
+
     await _firestore
         .collection('demandes')
         .doc(demandeId)
         .update({'statut': 'refusee'});
+
+    if (demandeDoc.exists) {
+      final data = demandeDoc.data()!;
+      final tontine = await getTontine(data['tontineId'] as String);
+      if (tontine != null) {
+        await _createNotification(
+          userUid: data['userUid'] as String,
+          title: 'Demande refusée',
+          description: 'Votre demande pour ${tontine.nom} a été refusée',
+          tontineNom: tontine.nom,
+          type: 'retard',
+        );
+      }
+    }
+  }
+
+  // ─── NOTIFICATIONS ───
+
+  Future<void> _createNotification({
+    required String userUid,
+    required String title,
+    required String description,
+    required String tontineNom,
+    required String type,
+    String tontineId = '',
+    String statut = '',
+  }) async {
+    final doc = _firestore.collection('notifications').doc();
+    await doc.set({
+      'id': doc.id,
+      'userUid': userUid,
+      'title': title,
+      'description': description,
+      'tontineNom': tontineNom,
+      'type': type,
+      'isRead': false,
+      'date': FieldValue.serverTimestamp(),
+      'tontineId': tontineId,
+      'statut': statut,
+    });
+  }
+
+  Future<void> envoyerInvitation({
+    required String tontineId,
+    required String tontineNom,
+    required String userUid,
+    required String adminNom,
+  }) async {
+    await _createNotification(
+      userUid: userUid,
+      title: 'Invitation à rejoindre',
+      description: '$adminNom vous invite à rejoindre la tontine $tontineNom',
+      tontineNom: tontineNom,
+      type: 'invitation',
+      tontineId: tontineId,
+    );
+  }
+
+  Future<void> accepterInvitation(String notificationId, String tontineId, String userUid) async {
+    final dejaMembre = await estDejaMembreTontine(tontineId, userUid);
+    if (!dejaMembre) {
+      await _firestore.collection('tontines').doc(tontineId).update({
+        'membresUids': FieldValue.arrayUnion([userUid]),
+      });
+    }
+    await _firestore.collection('notifications').doc(notificationId).update({
+      'statut': 'acceptee',
+      'isRead': true,
+    });
+  }
+
+  Future<void> refuserInvitation(String notificationId) async {
+    await _firestore.collection('notifications').doc(notificationId).update({
+      'statut': 'refusee',
+      'isRead': true,
+    });
   }
 
   // ─── MEMBRES ───
@@ -258,9 +371,17 @@ class TontineService {
     return users;
   }
 
-  Future<List<AppUser>> rechercherUtilisateurs(String query) async {
-    final results = await _firestore.collection('users').get();
+  Future<List<AppUser>> rechercherUtilisateurs(String query, {int limit = 50}) async {
+    final QuerySnapshot<Map<String, dynamic>> results;
+    if (limit > 0) {
+      results = await _firestore.collection('users').limit(limit).get();
+    } else {
+      results = await _firestore.collection('users').get();
+    }
     final q = query.toLowerCase().replaceAll(' ', '');
+    if (q.isEmpty) {
+      return results.docs.map((doc) => AppUser.fromMap(doc.data())).toList();
+    }
     return results.docs
         .map((doc) => AppUser.fromMap(doc.data()))
         .where((u) =>

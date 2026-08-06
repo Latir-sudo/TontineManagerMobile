@@ -33,13 +33,17 @@ class _DemandesAdhesionScreenState extends State<DemandesAdhesionScreen> {
   }
 
   Future<void> _accepter(DemandeAdhesion demande) async {
-    await _tontineService.accepterDemande(demande.id, widget.tontineId, demande.userUid);
+    final success = await _tontineService.accepterDemande(demande.id, widget.tontineId, demande.userUid);
     setState(() => _demandes.remove(demande));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Membre accepté'),
-        backgroundColor: Color(0xFF27AE60),
+      SnackBar(
+        content: Text(success
+            ? 'Membre accepté'
+            : 'Ce membre fait déjà partie de la tontine'),
+        backgroundColor: success
+            ? const Color(0xFF27AE60)
+            : const Color(0xFFF57C00),
         behavior: SnackBarBehavior.floating,
       ),
     );

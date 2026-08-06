@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../models/app_notification.dart';
 import '../services/session_service.dart';
+import '../services/tontine_service.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -13,6 +14,7 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final TontineService _tontineService = TontineService();
   List<AppNotification> _notifications = [];
   bool _isLoading = true;
 
@@ -57,6 +59,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final user = SessionService.currentAppUser;
     if (user == null) return;
 
+    setState(() {
+      _notifications = _notifications.map((n) => AppNotification(
+        id: n.id,
+        userUid: n.userUid,
+        title: n.title,
+        description: n.description,
+        tontineNom: n.tontineNom,
+        type: n.type,
+        isRead: true,
+        date: n.date,
+      )).toList();
+    });
+
     try {
       final query = await _firestore
           .collection('notifications')
@@ -64,37 +79,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           .where('isRead', isEqualTo: false)
           .get();
 
+      final batch = _firestore.batch();
       for (final doc in query.docs) {
-        await doc.reference.update({'isRead': true});
+        batch.update(doc.reference, {'isRead': true});
       }
-
-      setState(() {
-        _notifications = _notifications.map((n) => AppNotification(
-          id: n.id,
-          userUid: n.userUid,
-          title: n.title,
-          description: n.description,
-          tontineNom: n.tontineNom,
-          type: n.type,
-          isRead: true,
-          date: n.date,
-        )).toList();
-      });
-    } catch (e) {
-      // Marquer localement en cas d'erreur réseau
-      setState(() {
-        _notifications = _notifications.map((n) => AppNotification(
-          id: n.id,
-          userUid: n.userUid,
-          title: n.title,
-          description: n.description,
-          tontineNom: n.tontineNom,
-          type: n.type,
-          isRead: true,
-          date: n.date,
-        )).toList();
-      });
-    }
+      await batch.commit();
+    } catch (_) {}
   }
 
   String _formatTimeAgo(DateTime date) {
@@ -157,7 +147,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       : ListView.separated(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                           itemCount: _notifications.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          separatorBuilder: (_, _) => const SizedBox(height: 12),
                           itemBuilder: (context, index) =>
                               _buildNotificationCard(_notifications[index]),
                         ),
@@ -215,8 +205,39 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
+  Future<void> _accepterInvitation(AppNotification notification) async {
+    final user = SessionService.currentAppUser;
+    if (user == null) return;
+    await _tontineService.accepterInvitation(
+        notification.id, notification.tontineId, user.uid);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Invitation acceptée'),
+        backgroundColor: Color(0xFF27AE60),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    _loadNotifications();
+  }
+
+  Future<void> _refuserInvitation(AppNotification notification) async {
+    await _tontineService.refuserInvitation(notification.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Invitation refusée'),
+        backgroundColor: Color(0xFFF57C00),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    _loadNotifications();
+  }
+
   Widget _buildNotificationCard(AppNotification notification) {
     final config = _getNotificationConfig(notification.type);
+    final isInvitationPending =
+        notification.type == 'invitation' && notification.statut.isEmpty;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -287,7 +308,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         color: AppColors.primaryDark.withValues(alpha: 0.7),
                       ),
                     ),
-                    if (!notification.isRead)
+                    if (!notification.isRead && !isInvitationPending)
                       Container(
                         width: 10,
                         height: 10,
@@ -298,6 +319,68 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       ),
                   ],
                 ),
+                if (isInvitationPending) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => _refuserInvitation(notification),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFE53935),
+                            side: const BorderSide(color: Color(0xFFE53935)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          child: const Text('Refuser',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => _accepterInvitation(notification),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF27AE60),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          child: const Text('Accepter',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.white)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (notification.type == 'invitation' && notification.statut.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: notification.statut == 'acceptee'
+                          ? const Color(0xFF27AE60).withValues(alpha: 0.1)
+                          : const Color(0xFFF57C00).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      notification.statut == 'acceptee' ? 'Acceptée' : 'Refusée',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: notification.statut == 'acceptee'
+                            ? const Color(0xFF27AE60)
+                            : const Color(0xFFF57C00),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -325,6 +408,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           icon: Icons.person_add_outlined,
           iconColor: const Color(0xFF7C4DFF),
           backgroundColor: const Color(0xFFF3E5F5),
+        );
+      case 'invitation':
+        return _NotificationConfig(
+          icon: Icons.mail_outlined,
+          iconColor: const Color(0xFF1E88E5),
+          backgroundColor: const Color(0xFFE3F2FD),
         );
       case 'retard':
         return _NotificationConfig(

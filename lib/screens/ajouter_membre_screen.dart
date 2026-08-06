@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/tontine_service.dart';
+import '../services/session_service.dart';
 import '../models/app_user.dart';
 
 class AjouterMembreScreen extends StatefulWidget {
   final String tontineId;
-  const AjouterMembreScreen({super.key, required this.tontineId});
+  final String tontineNom;
+  const AjouterMembreScreen({super.key, required this.tontineId, required this.tontineNom});
 
   @override
   State<AjouterMembreScreen> createState() => _AjouterMembreScreenState();
@@ -14,6 +17,7 @@ class AjouterMembreScreen extends StatefulWidget {
 class _AjouterMembreScreenState extends State<AjouterMembreScreen> {
   final _tontineService = TontineService();
   final _searchController = TextEditingController();
+  Timer? _debounce;
   String _searchQuery = '';
   List<AppUser> _utilisateurs = [];
   bool _isLoading = true;
@@ -44,7 +48,23 @@ class _AjouterMembreScreenState extends State<AjouterMembreScreen> {
     }).toList();
   }
 
-  void _ajouterMembre(AppUser utilisateur) {
+  void _ajouterMembre(AppUser utilisateur) async {
+    final dejaMembre = await _tontineService.estDejaMembreTontine(
+        widget.tontineId, utilisateur.uid);
+
+    if (!mounted) return;
+
+    if (dejaMembre) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${utilisateur.nom} fait déjà partie de cette tontine'),
+          backgroundColor: const Color(0xFFF57C00),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -67,7 +87,7 @@ class _AjouterMembreScreenState extends State<AjouterMembreScreen> {
               ),
               const SizedBox(height: 18),
               const Text(
-                'Confirmer l\'ajout',
+                'Envoyer une invitation',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -76,7 +96,7 @@ class _AjouterMembreScreenState extends State<AjouterMembreScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Ajouter ${utilisateur.nom} à la tontine ?',
+                'Inviter ${utilisateur.nom} à rejoindre la tontine ?',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 15, color: AppColors.grey),
               ),
@@ -107,13 +127,19 @@ class _AjouterMembreScreenState extends State<AjouterMembreScreen> {
                     child: ElevatedButton(
                       onPressed: () async {
                         Navigator.pop(ctx);
-                        await _tontineService.ajouterMembre(
-                            widget.tontineId, utilisateur.uid);
+                        final adminNom =
+                            SessionService.currentAppUser?.nom ?? '';
+                        await _tontineService.envoyerInvitation(
+                          tontineId: widget.tontineId,
+                          tontineNom: widget.tontineNom,
+                          userUid: utilisateur.uid,
+                          adminNom: adminNom,
+                        );
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content:
-                                Text('${utilisateur.nom} ajouté à la tontine'),
+                            content: Text(
+                                'Invitation envoyée à ${utilisateur.nom}'),
                             backgroundColor: const Color(0xFF27AE60),
                             behavior: SnackBarBehavior.floating,
                           ),
@@ -127,7 +153,7 @@ class _AjouterMembreScreenState extends State<AjouterMembreScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: const Text(
-                        'Ajouter',
+                        'Inviter',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -145,8 +171,16 @@ class _AjouterMembreScreenState extends State<AjouterMembreScreen> {
     );
   }
 
+  void _onSearchChanged(String val) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() => _searchQuery = val);
+    });
+  }
+
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -183,7 +217,7 @@ class _AjouterMembreScreenState extends State<AjouterMembreScreen> {
                   padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
                   child: TextField(
                     controller: _searchController,
-                    onChanged: (val) => setState(() => _searchQuery = val),
+                    onChanged: _onSearchChanged,
                     decoration: InputDecoration(
                       hintText: 'Rechercher par nom ou téléphone',
                       hintStyle:

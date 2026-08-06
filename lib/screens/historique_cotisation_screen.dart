@@ -31,7 +31,7 @@ class _HistoriqueCotisationScreenState
     if (user == null) return;
 
     final cotisations = await _tontineService.getHistoriqueCotisations(user.uid);
-    final total = await _tontineService.getTotalCotise(user.uid);
+    final total = _tontineService.calculerTotalFromList(cotisations);
 
     if (mounted) {
       setState(() {

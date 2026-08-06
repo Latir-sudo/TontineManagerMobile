@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
@@ -17,6 +18,7 @@ class TontinesDisponiblesScreen extends StatefulWidget {
 class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
   final _tontineService = TontineService();
   final _searchController = TextEditingController();
+  Timer? _debounce;
   String _selectedFilter = 'Toutes';
   List<Tontine> _tontines = [];
   bool _isLoading = true;
@@ -78,8 +80,16 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
     return buffer.toString();
   }
 
+  void _onSearchChanged(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -161,7 +171,7 @@ class _TontinesDisponiblesScreenState extends State<TontinesDisponiblesScreen> {
             ),
             child: TextField(
               controller: _searchController,
-              onChanged: (_) => setState(() {}),
+              onChanged: _onSearchChanged,
               style: const TextStyle(fontSize: 16),
               decoration: InputDecoration(
                 hintText: 'Rechercher une tontine...',

@@ -6,7 +6,7 @@ import 'mes_tontines_screen.dart';
 import 'tontines_disponibles_screen.dart';
 import 'profil_screen.dart';
 import 'notifications_screen.dart';
-import 'connexion_screen.dart';
+import 'connexion_full_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -19,12 +19,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  final List<Widget> _screens = const [
-    AccueilScreen(),
-    MesTontinesScreen(),
-    TontinesDisponiblesScreen(),
-    ProfilScreen(),
+  final List<Widget?> _screens = [null, null, null, null];
+  final List<Widget Function()> _screenBuilders = [
+    () => const AccueilScreen(),
+    () => const MesTontinesScreen(),
+    () => const TontinesDisponiblesScreen(),
+    () => const ProfilScreen(),
   ];
+
+  Widget _getScreen(int index) {
+    _screens[index] ??= _screenBuilders[index]();
+    return _screens[index]!;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +40,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       drawer: _buildDrawer(),
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: List.generate(4, (i) =>
+          _screens[i] != null || i == _currentIndex
+            ? _getScreen(i)
+            : const SizedBox.shrink(),
+        ),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -438,7 +448,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const ConnexionScreen(),
+                            builder: (context) => const ConnexionFullScreen(),
                           ),
                         );
                       },

@@ -73,15 +73,19 @@ class AuthService {
         return AuthResult.failure('Code PIN incorrect');
       }
 
-      // Connecter l'utilisateur via Firebase Auth anonyme
-      await _auth.signInAnonymously();
+      // Se connecter anonymement juste pour la session Firebase
+      if (_auth.currentUser == null) {
+        await _auth.signInAnonymously()
+            .timeout(const Duration(seconds: 10));
+      }
 
+      // Toujours utiliser le uid d'origine stocké dans Firestore
       final user = AppUser.fromMap(userData);
       return AuthResult.success(user);
     } on FirebaseAuthException catch (e) {
       return AuthResult.failure(_mapFirebaseError(e.code));
     } catch (e) {
-      return AuthResult.failure('Une erreur est survenue. Réessayez.');
+      return AuthResult.failure('Une erreur est survenue. Vérifiez votre connexion.');
     }
   }
 
@@ -98,68 +102,20 @@ class AuthService {
       }
 
       final userData = query.docs.first.data();
-      final originalUid = userData['uid'] as String;
 
-      // Se connecter anonymement si pas déjà connecté
+      // Se connecter anonymement si pas déjà connecté (juste pour la session)
       if (_auth.currentUser == null) {
-        await _auth.signInAnonymously();
+        await _auth.signInAnonymously()
+            .timeout(const Duration(seconds: 10));
       }
 
-      final currentUid = _auth.currentUser!.uid;
-
-      // Si le uid Firebase Auth actuel diffère du uid stocké,
-      // on doit mettre à jour le doc user ET les membresUids dans les tontines
-      if (currentUid != originalUid) {
-        final updatedData = Map<String, dynamic>.from(userData);
-        updatedData['uid'] = currentUid;
-        await _firestore.collection('users').doc(currentUid).set(updatedData);
-
-        // Mettre à jour les tontines où l'ancien uid était membre
-        final tontinesQuery = await _firestore
-            .collection('tontines')
-            .where('membresUids', arrayContains: originalUid)
-            .get();
-
-        for (final tontineDoc in tontinesQuery.docs) {
-          await tontineDoc.reference.update({
-            'membresUids': FieldValue.arrayRemove([originalUid]),
-          });
-          await tontineDoc.reference.update({
-            'membresUids': FieldValue.arrayUnion([currentUid]),
-          });
-          // Si l'utilisateur est l'admin, mettre à jour adminUid aussi
-          if (tontineDoc.data()['adminUid'] == originalUid) {
-            await tontineDoc.reference.update({'adminUid': currentUid});
-          }
-        }
-
-        // Mettre à jour les cotisations
-        final cotisationsQuery = await _firestore
-            .collection('cotisations')
-            .where('userUid', isEqualTo: originalUid)
-            .get();
-
-        for (final cotDoc in cotisationsQuery.docs) {
-          await cotDoc.reference.update({'userUid': currentUid});
-        }
-
-        // Mettre à jour les demandes
-        final demandesQuery = await _firestore
-            .collection('demandes')
-            .where('userUid', isEqualTo: originalUid)
-            .get();
-
-        for (final demDoc in demandesQuery.docs) {
-          await demDoc.reference.update({'userUid': currentUid});
-        }
-      }
-
-      final user = AppUser.fromMap({...userData, 'uid': currentUid});
+      // Toujours utiliser le uid stocké dans Firestore (celui de l'inscription)
+      final user = AppUser.fromMap(userData);
       return AuthResult.success(user);
     } on FirebaseAuthException catch (e) {
       return AuthResult.failure(_mapFirebaseError(e.code));
     } catch (e) {
-      return AuthResult.failure('Erreur: ${e.toString()}');
+      return AuthResult.failure('Une erreur est survenue. Vérifiez votre connexion.');
     }
   }
 

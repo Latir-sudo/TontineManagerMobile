@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/session_service.dart';
+import 'connexion_full_screen.dart';
 
 class ProfilScreen extends StatelessWidget {
   const ProfilScreen({super.key});
@@ -341,8 +342,13 @@ class ProfilScreen extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
-        onPressed: () {
-          Navigator.of(context).popUntil((route) => route.isFirst);
+        onPressed: () async {
+          await SessionService().logout();
+          if (!context.mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const ConnexionFullScreen()),
+            (route) => false,
+          );
         },
         icon: const Icon(Icons.logout, size: 18),
         label: const Text(

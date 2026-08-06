@@ -6,9 +6,11 @@ class AppNotification {
   final String title;
   final String description;
   final String tontineNom;
-  final String type; // paiement, rappel, nouveau_membre, retard
+  final String type; // paiement, rappel, nouveau_membre, retard, invitation
   final bool isRead;
   final DateTime date;
+  final String tontineId;
+  final String statut; // '', 'acceptee', 'refusee'
 
   AppNotification({
     required this.id,
@@ -19,6 +21,8 @@ class AppNotification {
     required this.type,
     required this.isRead,
     required this.date,
+    this.tontineId = '',
+    this.statut = '',
   });
 
   Map<String, dynamic> toMap() {
@@ -31,6 +35,8 @@ class AppNotification {
       'type': type,
       'isRead': isRead,
       'date': Timestamp.fromDate(date),
+      'tontineId': tontineId,
+      'statut': statut,
     };
   }
 
@@ -54,6 +60,8 @@ class AppNotification {
       type: map['type'] as String? ?? 'rappel',
       isRead: map['isRead'] as bool? ?? false,
       date: parsedDate,
+      tontineId: map['tontineId'] as String? ?? '',
+      statut: map['statut'] as String? ?? '',
     );
   }
 }

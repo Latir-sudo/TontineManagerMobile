@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
-import 'connexion_screen.dart';
+import 'connexion_full_screen.dart';
 import 'main_navigation_screen.dart';
 
 class InscriptionScreen extends StatefulWidget {
@@ -398,7 +398,7 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
           onPressed: () {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const ConnexionScreen()),
+              MaterialPageRoute(builder: (context) => const ConnexionFullScreen()),
             );
           },
           style: TextButton.styleFrom(

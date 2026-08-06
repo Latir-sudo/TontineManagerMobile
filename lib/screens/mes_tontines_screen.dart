@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
-import '../services/tontine_service.dart';
 import '../services/session_service.dart';
 import '../models/tontine.dart';
 import 'detail_tontine_screen.dart';
+import 'parametres_tontine_screen.dart';
 
 class MesTontinesScreen extends StatefulWidget {
   const MesTontinesScreen({super.key});
@@ -13,27 +15,45 @@ class MesTontinesScreen extends StatefulWidget {
 }
 
 class _MesTontinesScreenState extends State<MesTontinesScreen> {
-  final _tontineService = TontineService();
   List<Tontine> _tontines = [];
   bool _isLoading = true;
+  StreamSubscription? _tontinesSubscription;
 
   @override
   void initState() {
     super.initState();
-    _loadTontines();
+    _listenTontines();
   }
 
-  Future<void> _loadTontines() async {
+  @override
+  void dispose() {
+    _tontinesSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenTontines() {
     final user = SessionService.currentAppUser;
     if (user == null) return;
 
-    final tontines = await _tontineService.getMesTontines(user.uid);
-    if (mounted) {
-      setState(() {
-        _tontines = tontines;
-        _isLoading = false;
-      });
-    }
+    _tontinesSubscription = FirebaseFirestore.instance
+        .collection('tontines')
+        .where('membresUids', arrayContains: user.uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _tontines =
+              snapshot.docs.map((doc) => Tontine.fromMap(doc.data())).toList();
+          _isLoading = false;
+        });
+      }
+    });
+  }
+
+  bool _isAdmin(Tontine tontine) {
+    final user = SessionService.currentAppUser;
+    if (user == null) return false;
+    return tontine.adminUid == user.uid || tontine.adminNom == user.nom;
   }
 
   String _formatMontant(int montant) {
@@ -392,35 +412,63 @@ class _MesTontinesScreenState extends State<MesTontinesScreen> {
                     ],
                   ),
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: tontine.isActive
-                        ? Colors.green.withValues(alpha: 0.1)
-                        : AppColors.grey.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.circle,
-                        size: 7,
-                        color: tontine.isActive ? Colors.green : AppColors.grey,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        tontine.isActive ? 'Active' : 'Terminée',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color:
-                              tontine.isActive ? Colors.green : AppColors.grey,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_isAdmin(tontine))
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  ParametresTontineScreen(tontine: tontine),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryDark.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.settings_outlined,
+                              size: 18, color: AppColors.primaryDark),
                         ),
                       ),
-                    ],
-                  ),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: tontine.isActive
+                            ? Colors.green.withValues(alpha: 0.1)
+                            : AppColors.grey.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.circle,
+                            size: 7,
+                            color: tontine.isActive ? Colors.green : AppColors.grey,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            tontine.isActive ? 'Active' : 'Terminée',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color:
+                                  tontine.isActive ? Colors.green : AppColors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

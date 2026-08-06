@@ -15,6 +15,7 @@ class _CreerTontineScreenState extends State<CreerTontineScreen> {
   final _nomController = TextEditingController();
   final _montantController = TextEditingController(text: '5000');
   final _maxMembresController = TextEditingController(text: '20');
+  final _telephoneVersementController = TextEditingController();
   String? _selectedCategorie;
   String _selectedLocalite = 'Dakar';
   String? _selectedFrequence;
@@ -41,8 +42,19 @@ class _CreerTontineScreenState extends State<CreerTontineScreen> {
     'Bimensuel',
   ];
 
+  @override
+  void dispose() {
+    _nomController.dispose();
+    _montantController.dispose();
+    _maxMembresController.dispose();
+    _telephoneVersementController.dispose();
+    super.dispose();
+  }
+
   Future<void> _creerTontine() async {
-    if (_nomController.text.trim().isEmpty || _selectedFrequence == null) {
+    if (_nomController.text.trim().isEmpty ||
+        _selectedFrequence == null ||
+        _telephoneVersementController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Veuillez remplir tous les champs obligatoires')),
       );
@@ -70,14 +82,15 @@ class _CreerTontineScreenState extends State<CreerTontineScreen> {
         adminNom: user.nom,
         maxMembres: int.tryParse(_maxMembresController.text) ?? 20,
         dateDebut: DateTime.now(),
-      );
+        telephoneVersement: _telephoneVersementController.text.trim(),
+      ).timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e')),
+        const SnackBar(content: Text('Erreur de connexion. Vérifiez votre réseau et réessayez.')),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -192,6 +205,23 @@ class _CreerTontineScreenState extends State<CreerTontineScreen> {
                       child: TextField(
                         controller: _maxMembresController,
                         keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        const Icon(Icons.phone_outlined,
+                            size: 18, color: AppColors.darkText),
+                        const SizedBox(width: 4),
+                        _buildLabel('Téléphone de versement'),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _telephoneVersementController,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        hintText: 'Ex. 77 123 45 67',
                       ),
                     ),
                     const SizedBox(height: 32),

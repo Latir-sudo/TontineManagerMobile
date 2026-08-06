@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../services/session_service.dart';
 import '../services/tontine_service.dart';
@@ -22,11 +24,55 @@ class _AccueilScreenState extends State<AccueilScreen> {
   List<Tontine> _mesTontines = [];
   int _totalCotise = 0;
   bool _isLoading = true;
+  int _unreadNotifications = 0;
+  StreamSubscription? _notifSubscription;
+  StreamSubscription? _tontinesSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _listenNotifications();
+    _listenTontines();
+  }
+
+  @override
+  void dispose() {
+    _notifSubscription?.cancel();
+    _tontinesSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenTontines() {
+    final user = SessionService.currentAppUser;
+    if (user == null) return;
+    _tontinesSubscription = FirebaseFirestore.instance
+        .collection('tontines')
+        .where('membresUids', arrayContains: user.uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _mesTontines =
+              snapshot.docs.map((doc) => Tontine.fromMap(doc.data())).toList();
+        });
+      }
+    });
+  }
+
+  void _listenNotifications() {
+    final user = SessionService.currentAppUser;
+    if (user == null) return;
+    _notifSubscription = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userUid', isEqualTo: user.uid)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        setState(() => _unreadNotifications = snapshot.docs.length);
+      }
+    });
   }
 
   String _formatMontant(int montant) {
@@ -45,13 +91,10 @@ class _AccueilScreenState extends State<AccueilScreen> {
     if (user != null) {
       _nomUtilisateur = user.nom;
       try {
-        final tontines = await _tontineService.getMesTontines(user.uid)
-            .timeout(const Duration(seconds: 8), onTimeout: () => []);
         final total = await _tontineService.getTotalCotise(user.uid)
-            .timeout(const Duration(seconds: 8), onTimeout: () => 0);
+            .timeout(const Duration(seconds: 5), onTimeout: () => 0);
         if (mounted) {
           setState(() {
-            _mesTontines = tontines;
             _totalCotise = total;
             _isLoading = false;
           });
@@ -121,19 +164,20 @@ class _AccueilScreenState extends State<AccueilScreen> {
                 child: Stack(
                   children: [
                     const Icon(Icons.notifications_outlined, color: AppColors.white, size: 28),
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: AppColors.accent,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppColors.primaryDark, width: 1.5),
+                    if (_unreadNotifications > 0)
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: AppColors.accent,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.primaryDark, width: 1.5),
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -481,7 +525,7 @@ class _AccueilScreenState extends State<AccueilScreen> {
         final tontine = _mesTontines.first;
         final montantTour = tontine.montantCotisation * tontine.membresUids.length;
 
-        return Padding(
+        return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,

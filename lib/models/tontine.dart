@@ -14,6 +14,7 @@ class Tontine {
   final DateTime dateDebut;
   final DateTime createdAt;
   final bool isActive;
+  final String telephoneVersement;
 
   Tontine({
     required this.id,
@@ -29,6 +30,7 @@ class Tontine {
     required this.dateDebut,
     required this.createdAt,
     this.isActive = true,
+    this.telephoneVersement = '',
   });
 
   int get nombreMembres => membresUids.length;
@@ -48,6 +50,7 @@ class Tontine {
       'dateDebut': Timestamp.fromDate(dateDebut),
       'createdAt': Timestamp.fromDate(createdAt),
       'isActive': isActive,
+      'telephoneVersement': telephoneVersement,
     };
   }
 
@@ -66,6 +69,7 @@ class Tontine {
       dateDebut: (map['dateDebut'] as Timestamp).toDate(),
       createdAt: (map['createdAt'] as Timestamp).toDate(),
       isActive: map['isActive'] as bool? ?? true,
+      telephoneVersement: map['telephoneVersement'] as String? ?? '',
     );
   }
 }
