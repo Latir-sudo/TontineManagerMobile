@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
+import '../services/push_notification_service.dart';
 import 'main_navigation_screen.dart';
 import 'inscription_screen.dart';
 
@@ -56,6 +57,7 @@ class _ConnexionScreenState extends State<ConnexionScreen> {
 
     if (result.isSuccess) {
       SessionService().setCurrentUser(result.user!);
+      PushNotificationService().verifierEtEnvoyerRappels();
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
