@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl_phone_field/intl_phone_field.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
+import '../services/phone_verification_service.dart';
 import 'connexion_full_screen.dart';
 import 'main_navigation_screen.dart';
+import 'phone_verification_screen.dart';
 
 class InscriptionScreen extends StatefulWidget {
   const InscriptionScreen({super.key});
@@ -15,6 +18,7 @@ class InscriptionScreen extends StatefulWidget {
 
 class _InscriptionScreenState extends State<InscriptionScreen> {
   final _authService = AuthService();
+  final _phoneVerificationService = PhoneVerificationService();
   final _nomController = TextEditingController();
   final _telephoneController = TextEditingController();
   final _pinController = TextEditingController();
@@ -23,6 +27,8 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   String? _selectedLocalite;
+  String _completePhoneNumber = '';
+  bool _isPhoneValid = false;
 
   final List<String> _localites = [
     'Dakar',
@@ -45,9 +51,19 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
   }
 
   Future<void> _submit() async {
-    if (_nomController.text.trim().isEmpty ||
-        _telephoneController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Veuillez remplir les champs obligatoires');
+    // Validation des champs
+    if (_nomController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Veuillez entrer votre nom complet');
+      return;
+    }
+
+    if (!_isPhoneValid || _completePhoneNumber.isEmpty) {
+      setState(() => _errorMessage = 'Veuillez entrer un numéro de téléphone valide');
+      return;
+    }
+
+    if (_selectedLocalite == null || _selectedLocalite!.isEmpty) {
+      setState(() => _errorMessage = 'Veuillez sélectionner votre localité');
       return;
     }
 
@@ -69,9 +85,67 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
       _errorMessage = null;
     });
 
+    // Étape 1 : Vérifier que le numéro n'existe pas déjà
+    final existingUser = await _authService.findUserByPhone(_completePhoneNumber);
+    if (existingUser != null) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Ce numéro de téléphone est déjà utilisé';
+      });
+      return;
+    }
+
+    // Étape 2 : Envoyer le code de vérification
+    await _phoneVerificationService.verifyPhoneNumber(
+      phoneNumber: _completePhoneNumber,
+      onCodeSent: (verificationId) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+
+        // Naviguer vers l'écran de vérification OTP
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PhoneVerificationScreen(
+              phoneNumber: _completePhoneNumber,
+              onVerificationComplete: (verified) {
+                if (verified) {
+                  _completeInscription();
+                } else {
+                  Navigator.pop(context);
+                  setState(() => _errorMessage = 'Vérification échouée');
+                }
+              },
+            ),
+          ),
+        );
+      },
+      onVerificationCompleted: () {
+        // Vérification automatique réussie (Android uniquement)
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        _completeInscription();
+      },
+      onVerificationFailed: (error) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _errorMessage = error;
+        });
+      },
+    );
+  }
+
+  /// Complète l'inscription après vérification du téléphone
+  Future<void> _completeInscription() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     final result = await _authService.inscription(
       nom: _nomController.text.trim(),
-      telephone: _telephoneController.text.trim(),
+      telephone: _completePhoneNumber,
       localite: _selectedLocalite ?? '',
       pin: _pinController.text,
     );
@@ -82,9 +156,10 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
 
     if (result.isSuccess) {
       SessionService().setCurrentUser(result.user!);
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
+        (route) => false,
       );
     } else {
       setState(() => _errorMessage = result.error);
@@ -198,13 +273,53 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
         _buildField(
           label: 'Téléphone',
           required: true,
-          child: TextField(
+          child: IntlPhoneField(
             controller: _telephoneController,
-            keyboardType: TextInputType.phone,
-            decoration: _inputDecoration(
-              hint: '77 123 45 67',
-              icon: Icons.phone_outlined,
+            decoration: InputDecoration(
+              hintText: 'Numéro de téléphone',
+              hintStyle: TextStyle(color: AppColors.grey, fontSize: 16),
+              filled: true,
+              fillColor: AppColors.lightGrey,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(
+                  color: AppColors.accent,
+                  width: 2,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
             ),
+            languageCode: 'fr',
+            initialCountryCode: 'SN', // Sénégal par défaut
+            dropdownIconPosition: IconPosition.trailing,
+            flagsButtonPadding: const EdgeInsets.only(left: 8),
+            dropdownIcon: const Icon(
+              Icons.arrow_drop_down,
+              color: AppColors.grey,
+            ),
+            onChanged: (phone) {
+              setState(() {
+                _completePhoneNumber = phone.completeNumber;
+                try {
+                  _isPhoneValid = phone.isValidNumber();
+                } catch (_) {
+                  _isPhoneValid = false;
+                }
+                _errorMessage = null;
+              });
+            },
+            invalidNumberMessage: 'Numéro invalide',
           ),
         ),
         const SizedBox(height: 20),
@@ -355,7 +470,11 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
   }
 
   Widget _buildSubmitButton() {
-    final isReady = _pinController.text.length == 4 &&
+    final isReady = _nomController.text.trim().isNotEmpty &&
+        _isPhoneValid &&
+        _completePhoneNumber.isNotEmpty &&
+        _selectedLocalite != null &&
+        _pinController.text.length == 4 &&
         _pinConfirmController.text.length == 4 &&
         !_isLoading;
     return SizedBox(
