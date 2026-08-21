@@ -6,6 +6,8 @@ class AppUser {
   final String telephone;
   final String localite;
   final String pin;
+  final String? numeroCni;
+  final String? cniImageUrl;
   final DateTime createdAt;
 
   AppUser({
@@ -14,6 +16,8 @@ class AppUser {
     required this.telephone,
     required this.localite,
     required this.pin,
+    this.numeroCni,
+    this.cniImageUrl,
     required this.createdAt,
   });
 
@@ -24,6 +28,8 @@ class AppUser {
       'telephone': telephone,
       'localite': localite,
       'pin': pin,
+      'numeroCni': numeroCni,
+      'cniImageUrl': cniImageUrl,
       'createdAt': createdAt.toIso8601String(),
     };
   }
@@ -45,6 +51,8 @@ class AppUser {
       telephone: map['telephone'] as String,
       localite: map['localite'] as String? ?? '',
       pin: map['pin'] as String,
+      numeroCni: map['numeroCni'] as String?,
+      cniImageUrl: map['cniImageUrl'] as String?,
       createdAt: parsedDate,
     );
   }
