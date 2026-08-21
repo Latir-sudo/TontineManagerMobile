@@ -14,6 +14,8 @@ class AuthService {
     required String telephone,
     required String localite,
     required String pin,
+    String? numeroCni,
+    String? cniImageUrl,
   }) async {
     try {
       // Vérifier si le numéro est déjà utilisé
@@ -37,6 +39,8 @@ class AuthService {
         telephone: telephone,
         localite: localite,
         pin: pin,
+        numeroCni: numeroCni,
+        cniImageUrl: cniImageUrl,
         createdAt: DateTime.now(),
       );
 

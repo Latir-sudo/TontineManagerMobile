@@ -39,6 +39,14 @@ dependencies:
   firebase_core: ^3.13.0
   firebase_auth: ^5.5.4
   cloud_firestore: ^5.6.8
+  firebase_messaging: ^15.2.4
+
+  # Notifications locales
+  flutter_local_notifications: ^18.0.1
+
+  # Image picker + Storage
+  image_picker: ^1.1.2
+  firebase_storage: ^12.4.4
 
   intl: ^0.19.0
   intl_phone_field: ^3.2.0  # Pour la saisie de numéros internationaux

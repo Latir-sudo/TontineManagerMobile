@@ -1,9 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
+import '../services/push_notification_service.dart';
 import '../services/phone_verification_service.dart';
 import 'connexion_full_screen.dart';
 import 'main_navigation_screen.dart';
@@ -21,6 +26,7 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
   final _phoneVerificationService = PhoneVerificationService();
   final _nomController = TextEditingController();
   final _telephoneController = TextEditingController();
+  final _cniController = TextEditingController();
   final _pinController = TextEditingController();
   final _pinConfirmController = TextEditingController();
   bool _pinMismatch = false;
@@ -29,6 +35,7 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
   String? _selectedLocalite;
   String _completePhoneNumber = '';
   bool _isPhoneValid = false;
+  File? _cniImage;
 
   final List<String> _localites = [
     'Dakar',
@@ -45,9 +52,49 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
   void dispose() {
     _nomController.dispose();
     _telephoneController.dispose();
+    _cniController.dispose();
     _pinController.dispose();
     _pinConfirmController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickCniImage() async {
+    final picker = ImagePicker();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Prendre une photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choisir depuis la galerie'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    final picked = await picker.pickImage(source: source, imageQuality: 75);
+    if (picked != null) {
+      setState(() => _cniImage = File(picked.path));
+    }
+  }
+
+  Future<String?> _uploadCniImage(String uid) async {
+    if (_cniImage == null) return null;
+    final ref = FirebaseStorage.instance
+        .ref()
+        .child('cni_images')
+        .child('$uid.jpg');
+    await ref.putFile(_cniImage!);
+    return await ref.getDownloadURL();
   }
 
   Future<void> _submit() async {
@@ -64,6 +111,16 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
 
     if (_selectedLocalite == null || _selectedLocalite!.isEmpty) {
       setState(() => _errorMessage = 'Veuillez sélectionner votre localité');
+      return;
+    }
+
+    if (_cniController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Le numéro CNI est obligatoire');
+      return;
+    }
+
+    if (_cniImage == null) {
+      setState(() => _errorMessage = 'Veuillez ajouter une photo de votre CNI');
       return;
     }
 
@@ -149,10 +206,17 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
       localite: _selectedLocalite ?? '',
       pin: _pinController.text,
     );
+    try {
+      // 1. D'abord créer le compte pour obtenir le uid
+      final result = await _authService.inscription(
+        nom: _nomController.text.trim(),
+        telephone: _telephoneController.text.trim(),
+        localite: _selectedLocalite ?? '',
+        pin: _pinController.text,
+        numeroCni: _cniController.text.trim(),
+      );
 
-    if (!mounted) return;
-
-    setState(() => _isLoading = false);
+      if (!mounted) return;
 
     if (result.isSuccess) {
       SessionService().setCurrentUser(result.user!);
@@ -163,6 +227,37 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
       );
     } else {
       setState(() => _errorMessage = result.error);
+      if (result.isSuccess) {
+        // 2. Upload de l'image CNI vers Firebase Storage
+        final imageUrl = await _uploadCniImage(result.user!.uid);
+
+        // 3. Mettre à jour le profil avec l'URL de l'image
+        if (imageUrl != null) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(result.user!.uid)
+              .update({'cniImageUrl': imageUrl});
+        }
+
+        if (!mounted) return;
+        SessionService().setCurrentUser(result.user!);
+        PushNotificationService().verifierEtEnvoyerRappels();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
+        );
+      } else {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = result.error;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Erreur lors de l\'envoi de l\'image. Réessayez.';
+      });
     }
   }
 
@@ -367,6 +462,98 @@ class _InscriptionScreenState extends State<InscriptionScreen> {
                 }).toList(),
                 onChanged: (val) => setState(() => _selectedLocalite = val),
               ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        _buildField(
+          label: 'Numéro CNI',
+          required: true,
+          child: TextField(
+            controller: _cniController,
+            keyboardType: TextInputType.text,
+            decoration: _inputDecoration(
+              hint: 'Ex: 1 234 5678 90123',
+              icon: Icons.badge_outlined,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        _buildField(
+          label: 'Photo de la CNI',
+          required: true,
+          child: GestureDetector(
+            onTap: _pickCniImage,
+            child: Container(
+              width: double.infinity,
+              height: _cniImage != null ? 200 : 120,
+              decoration: BoxDecoration(
+                color: AppColors.lightGrey,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.grey.withValues(alpha: 0.3),
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: _cniImage != null
+                  ? Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.file(
+                            _cniImage!,
+                            width: double.infinity,
+                            height: 200,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: GestureDetector(
+                            onTap: () => setState(() => _cniImage = null),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.redAccent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.close,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.add_a_photo_outlined,
+                          size: 36,
+                          color: AppColors.grey,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Appuyez pour ajouter une photo',
+                          style: TextStyle(
+                            color: AppColors.grey,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Photo recto de votre carte d\'identité',
+                          style: TextStyle(
+                            color: AppColors.grey.withValues(alpha: 0.7),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ),

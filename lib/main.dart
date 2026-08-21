@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'theme/app_theme.dart';
 import 'services/session_service.dart';
+import 'services/push_notification_service.dart';
 import 'screens/connexion_screen.dart';
 import 'screens/main_navigation_screen.dart';
 
@@ -15,6 +16,9 @@ void main() async {
   FirebaseFirestore.instance.settings = const Settings(
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
+
+  await PushNotificationService().initialize();
+
   runApp(const TontineManagerApp());
 }
 
@@ -53,6 +57,8 @@ class _SplashScreenState extends State<SplashScreen> {
         final user = await sessionService.loadCurrentUser()
             .timeout(const Duration(seconds: 5));
         if (user != null && mounted) {
+          // Vérifier les rappels de paiement après connexion
+          PushNotificationService().verifierEtEnvoyerRappels();
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
