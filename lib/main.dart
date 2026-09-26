@@ -5,7 +5,7 @@ import 'firebase_options.dart';
 import 'theme/app_theme.dart';
 import 'services/session_service.dart';
 import 'services/push_notification_service.dart';
-import 'screens/connexion_screen.dart';
+import 'screens/bienvenue_screen.dart';
 import 'screens/main_navigation_screen.dart';
 
 void main() async {
@@ -70,7 +70,7 @@ class _SplashScreenState extends State<SplashScreen> {
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const ConnexionScreen()),
+        MaterialPageRoute(builder: (_) => const BienvenueScreen()),
       );
     }
   }
